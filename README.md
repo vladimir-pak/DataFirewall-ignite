@@ -1,0 +1,54 @@
+# DataFirewall-ignite
+
+Приложение на Spring Boot с Apache Ignite для парсинга SQL в исполняемый Java байткод.
+Байткод записывается в IgniteCache.
+
+### IgniteCache
+- **Аутентификация** - Подключение к Ignite из внешних сервисов по логину и паролю через тонкий клиент Ignite.
+- **Наполнение** - В кэш харнятся байткоды всех проверок, выгруженных из базы Postgres. Хранение в формате IgniteCache<String, byte[]>
+
+### Парсинг SQL
+Парсинг SQL осуществляется с использованием ANTLR грамматики.
+
+### Загрузка Java классов
+Загрузка Java классов из byte[] осуществляется с использованием Janino.
+
+### Запуск приложения
+Запуск собранного jar выполняется по команде:
+```bash
+java \
+  --add-opens=java.base/jdk.internal.access=ALL-UNNAMED \
+  --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED \
+  --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
+  --add-opens=java.base/sun.util.calendar=ALL-UNNAMED \
+  --add-opens=java.management/com.sun.jmx.mbeanserver=ALL-UNNAMED \
+  --add-opens=jdk.internal.jvmstat/sun.jvmstat.monitor=ALL-UNNAMED \
+  --add-opens=java.base/sun.reflect.generics.reflectiveObjects=ALL-UNNAMED \
+  --add-opens=jdk.management/com.sun.management.internal=ALL-UNNAMED \
+  --add-opens=java.base/java.io=ALL-UNNAMED \
+  --add-opens=java.base/java.nio=ALL-UNNAMED \
+  --add-opens=java.base/java.net=ALL-UNNAMED \
+  --add-opens=java.base/java.util=ALL-UNNAMED \
+  --add-opens=java.base/java.util.concurrent=ALL-UNNAMED \
+  --add-opens=java.base/java.util.concurrent.locks=ALL-UNNAMED \
+  --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED \
+  --add-opens=java.base/java.lang=ALL-UNNAMED \
+  --add-opens=java.base/java.lang.invoke=ALL-UNNAMED \
+  --add-opens=java.base/java.math=ALL-UNNAMED \
+  --add-opens=java.sql/java.sql=ALL-UNNAMED \
+  --add-opens=java.base/java.lang.reflect=ALL-UNNAMED \
+  --add-opens=java.base/java.time=ALL-UNNAMED \
+  --add-opens=java.base/java.text=ALL-UNNAMED \
+  --add-opens=java.management/sun.management=ALL-UNNAMED \
+  --add-opens=java.desktop/java.awt.font=ALL-UNNAMED \
+  -jar metadata-ingestion-0.0.2-SNAPSHOT.jar
+  ```
+
+Для удобства запуска в корне проекта добавлен start.sh
+
+### Примеры использования
+Для использования добавлены контроллеры для парсинга и компиляции SQL -> java class и тестирования логики самих проверок.
+
+- **/api/v1/test/compile/{serviceName}** - для парсинга и компиляции. По результатам выполнения в кэш складываются byte[] проверок, а в памяти сохраняются экземпляры классов проверок выгруженных через ClassLoader.
+
+- **/api/v1/test/start** - запуск проверок. В теле запроса подается json с данными для проверки.

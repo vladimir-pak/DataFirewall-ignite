@@ -1,0 +1,40 @@
+{
+    "details": {
+        "ALL_RESULT": "ERROR",
+        "baseInfo": {
+            "birthdate": "SUCCESS",
+            "birthPlace": "SUCCESS",
+            "dataset_code": "String",
+            "fullName": "SUCCESS",
+            "name": "SUCCESS",
+            "patronymic": "SUCCESS",
+            "surname": "SUCCESS"
+        },
+        "documents": {
+            "clientIdCard": [
+                {
+                    "departmentCode": "SUCCESS",
+                    "elemId": "String",
+                    "issueAuthority": "SUCCESS",
+                    "issueDate": "SUCCESS",
+                    "number": "SUCCESS",
+                    "series": "SUCCESS"
+                }
+            ],
+            "clientInn": "SUCCESS",
+            "clientSnils": "SUCCESS",
+            "dataset_code": "String"
+        }
+    },
+    "dfw_action_dttm": "YYYY-MM-DDTHH:mm:ss.fffffff'Z'",
+    "dfw_action_type": "ANSWER",
+    "dfw_created_dttm": "YYYY-MM-DDTHH:mm:ss.fff'Z'",
+    "dfw_dataset_code": "String",
+    "dfw_hostname": "String",
+    "dfw_query_id": "String",
+    "dfw_readed_buf_dttm": "YYYY-MM-DDTHH:mm:ss.fff'Z'",
+    "dfw_readed_from_mq_dttm": "YYYY-MM-DDTHH:mm:ss.fffffff'Z'",
+    "dfw_sending_to_mq_dttm": "YYYY-MM-DDTHH:mm:ss.fffffff'Z'",
+    "dfw_user_login": "String",
+    "PROCESS_STATUS": "OK"
+}

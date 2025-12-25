@@ -1,0 +1,63 @@
+{
+    "data": {
+        "baseInfo": {
+            "birthCountry": "String",
+            "birthdate": "YYYY-MM-DD",
+            "birthPlace": "String",
+            "citizenship": null,
+            "dataset_code": "Система.Данные клиента",
+            "fullName": "String",
+            "gender": null,
+            "isPatronymicLack": null,
+            "mapping.birthCountry": "none",
+            "mapping.birthdate": "String",
+            "mapping.birthPlace": "String",
+            "mapping.citizenship": null,
+            "mapping.fullName": "String",
+            "mapping.gender": null,
+            "mapping.isPatronymicLack": "String",
+            "mapping.name": "String",
+            "mapping.patronymic": "String",
+            "mapping.surname": "String",
+            "name": "String",
+            "patronymic": "String",
+            "surname": "String"
+        },
+        "documents": {
+            "clientIdCard": [
+                {
+                    "departmentCode": "String",
+                    "elemId": "String",
+                    "expiryDate": "YYYY-MM-DD",
+                    "issueAuthority": "String",
+                    "issueDate": "YYYY-MM-DD",
+                    "mapping.departmentCode": "String",
+                    "mapping.expiryDate": "none",
+                    "mapping.issueAuthority": "String",
+                    "mapping.issueDate": "String",
+                    "mapping.number": "String",
+                    "mapping.primary": "String",
+                    "mapping.series": "String",
+                    "mapping.type": "String",
+                    "number": "String - Int",
+                    "primary": true,
+                    "series": "String",
+                    "type": "String"
+                }
+            ],
+            "clientInn": null,
+            "clientSnils": null,
+            "dataset_code": "Система.Документы клиента",
+            "mapping.clientInn": "String",
+            "mapping.clientSnils": "String"
+        }
+    },
+    "dfw_action_dttm": "YYYY-MM-DDTHH:mm:ss.fffffff'Z'",
+    "dfw_action_type": "QUERY",
+    "dfw_created_dttm": "YYYY-MM-DDTHH:mm:ss.fff'Z'",
+    "dfw_dataset_code": "String",
+    "dfw_hostname": "String",
+    "dfw_query_id": "String",
+    "dfw_readed_from_mq_dttm": "YYYY-MM-DDTHH:mm:ss.fffffff'Z'",
+    "dfw_user_login": "String"
+}

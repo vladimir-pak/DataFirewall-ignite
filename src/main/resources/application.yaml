@@ -1,0 +1,109 @@
+# server:
+#   port: 9200
+#   ssl:
+#     key-store: file:/app/cert/certificate.pfx
+#     key-store-password: ${KEYSTORE_PASSWORD}
+#     key-store-type: PKCS12
+#     enabled-protocols: TLSv1.3,TLSv1.2
+#     ciphers: >-
+#       TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+#       TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,
+#       TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,
+#       TLS_DHE_RSA_WITH_AES_256_CBC_SHA256
+
+spring:
+  application:
+    name: datafirewall
+    version: ${APP_VERSION:0.0.1}
+    projectName: mkad
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/spring}
+    username: ${DB_USER:ssdq}
+    password: ${DB_PASSWORD:ssdq_pass}
+    driverClassName: org.postgresql.Driver
+    defaultSchema: mkad
+    hikari:
+      maximum-pool-size: 20
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: TargetDBPool
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    properties:
+      hibernate:
+        default_schema: mkad
+
+  # flyway:
+  #   schemas: public
+  #   enabled: true
+  #   locations: classpath:db/migration
+  #   url: ${DB_URL:jdbc:postgresql://localhost:5432/meta_base}
+  #   user: ${DB_USER:postgres}
+  #   password: ${DB_PASSWORD:postgres}
+
+  tomcat:
+    max-connections: 100 # Максимальное количество соединений
+    accept-count: 100 # Максимальное количество потоков
+    threads:
+      max: 50 # Размер очереди запросов
+
+ignite:
+  persistence:
+    storagePath: /Users/vladimirpak/Desktop/datafirewall/ignite/storage
+    walPath: /Users/vladimirpak/Desktop/datafirewall/ignite/wal
+    walArchivePath: /Users/vladimirpak/Desktop/datafirewall/ignite/wal-archive
+    sslEnabled: false
+    jksPassword: 12345
+  network:
+    # Адрес, на который биндим Ignite-узел и коннектор тонкого клиента.
+    # Для внешних сервисов обычно 0.0.0.0 или реальный IP хоста.
+    localAddress: 127.0.0.1
+    # Список discovery-узлов (можно несколько через запятую), которые видят все участники кластера
+    # Например: "10.0.0.10:47500,10.0.0.11:47500"
+    discoveryAddresses: 127.0.0.1:47500
+    # Порт коммуникаций между нодами
+    communicationPort: 47100
+    # Порт тонкого клиента (thin client). Внешние сервисы будут подключаться по host:port.
+    clientConnectorPort: 10800
+
+logs-database:
+  enabled: true
+  task-create-partition: 0 0 0 * * ?
+  url: jdbc:postgresql://localhost:5432/log_db
+  username: ssdq
+  password: ssdq_pass
+  driverClassName: org.postgresql.Driver
+  table: "audit.datafirewall_log"
+
+clean-database-logs:
+  # cron expression, to switch off put value '-'
+  task-cleaner-schedule: 0 0 * * * ?
+  # delete logs from db that older than X days
+  clean-period: 1080
+
+logging:
+  cef:
+    path: logs
+    fileName: cef.log
+    retention-days: 90
+  level:
+    root: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.engine.jdbc.connections.internal.DriverManagerConnectionProviderImpl: DEBUG
+    org.apache.flink: INFO
+    org.springframework.jdbc: WARN
+    com.gpb.replication.postgres: DEBUG
+  file:
+    name: logs/datafirewall.log
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    console: "%d{HH:mm:ss} %-5level %logger{36} - %msg%n"
+  logback:
+    rollingpolicy:
+      max-file-size: 50MB
+      max-history: 7

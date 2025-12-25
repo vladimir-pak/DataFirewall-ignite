@@ -1,0 +1,26 @@
+{
+    "detail_results": {
+        "String": {
+            "ALL_RESULT": "ERROR",
+            "String": {
+                "String - int": "SUCCESS",
+                "String - int": "ERROR"
+            },
+            "String": {
+                "String - int": "SUCCESS",
+                "String - int": "SUCCESS"
+            },
+            "String": {
+                "String - int": "SUCCESS",
+                "String - int": "SUCCESS"
+            }
+        }
+    },
+    "dfw_action_dttm": "YYYY-MM-DDTHH:mm:ss.fffffff'Z'",
+    "dfw_action_type": "ANSWER_DETAIL",
+    "dfw_created_dttm": "YYYY-MM-DDTHH:mm:ss.fff'Z'",
+    "dfw_dataset_code": "String",
+    "dfw_hostname": "String",
+    "dfw_query_id": "String",
+    "dfw_user_login": "String"
+}

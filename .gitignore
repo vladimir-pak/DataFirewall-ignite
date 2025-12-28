@@ -1,0 +1,41 @@
+### Maven / Spring ###
+target/
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/wrapper/maven-wrapper.properties
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+### IntelliJ IDEA ###
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Кейсы, когда IDEA создаёт временные файлы в проекте
+*.class
+*.log
+
+### VS Code ###
+.vscode/
+.history/
+*.code-workspace
+
+### Java ###
+*.class
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.log
+
+### OS-specific ###
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db

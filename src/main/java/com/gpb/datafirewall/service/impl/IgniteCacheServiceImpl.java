@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import org.apache.ignite.Ignite;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Service;
 import com.gpb.datafirewall.cache.CacheComparisonResult;
 import com.gpb.datafirewall.model.SqlExpression;
 import com.gpb.datafirewall.repository.SqlExpressionRepository;
+import com.gpb.datafirewall.service.IgniteCacheService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +34,7 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class IgniteCacheServiceImpl {
+public class IgniteCacheServiceImpl implements IgniteCacheService {
 
     private final SqlExpressionRepository repository;
 
@@ -41,31 +43,87 @@ public class IgniteCacheServiceImpl {
 
     protected final Map<String, IgniteCache<String, byte[]>> compiledRulesCache = new ConcurrentHashMap<>();
     protected final Map<String, IgniteCache<Integer, String>> dbCache = new ConcurrentHashMap<>();
+    private final Map<String, IgniteCache<?, ?>> customCache = new ConcurrentHashMap<>();
 
     protected final String COMPILED_RULES_PREFIX = "compiled_%s";
     protected final String DB_CACHE_PREFIX = "db_%s_";
     protected final String TEMP_DB_CACHE_PREFIX = "temp_db_%s_";
+    protected final String CUSTOM_CACHE_PREFIX = "cache_%s";
+
+    private <K, V> IgniteCache<K, V> getOrCreateCache(
+            String cacheName,
+            Class<K> keyType,
+            Class<V> valType,
+            Consumer<CacheConfiguration<K, V>> configurer
+    ) {
+        CacheConfiguration<K, V> cacheCfg = new CacheConfiguration<>(cacheName);
+
+        // Общие настройки
+        cacheCfg.setReadFromBackup(true);
+        cacheCfg.setStatisticsEnabled(false);
+        cacheCfg.setCopyOnRead(false);
+        cacheCfg.setIndexedTypes(keyType, valType);
+
+        // Специфичные настройки для конкретного кэша
+        if (configurer != null) {
+            configurer.accept(cacheCfg);
+        }
+
+        return ignite.getOrCreateCache(cacheCfg);
+    }
 
     /**
      * Получить или создать runtime кэш с компилированным кодом проверок по sourceName - источник
      */
+    @Override
     public IgniteCache<String, byte[]> getOrCreateCompiledCache(String sourceName) {
         return compiledRulesCache.computeIfAbsent(sourceName, key -> {
             String cacheName = String.format(COMPILED_RULES_PREFIX, sourceName);
 
-            CacheConfiguration<String, byte[]> cacheCfg =
-                new CacheConfiguration<>(cacheName);
-                
-            cacheCfg.setCacheMode(CacheMode.REPLICATED);
-            cacheCfg.setAtomicityMode(CacheAtomicityMode.TRANSACTIONAL);
-            cacheCfg.setReadFromBackup(true);
-            cacheCfg.setStatisticsEnabled(false);
-            cacheCfg.setCopyOnRead(false);
-
-            cacheCfg.setIndexedTypes(String.class, byte[].class);
-
-            return ignite.getOrCreateCache(cacheCfg);
+            return getOrCreateCache(
+                    cacheName,
+                    String.class,
+                    byte[].class,
+                    cfg -> {
+                        cfg.setCacheMode(CacheMode.REPLICATED);
+                        cfg.setAtomicityMode(CacheAtomicityMode.TRANSACTIONAL);
+                    }
+            );
         });
+    }
+
+    /**
+     * 
+     * @param <K> Тип данных ключа для кэша
+     * @param <V> Тип данных значения по ключу кэша
+     * @param cacheName Наименование кэша (String)
+     * @param keyType Класс типа данных ключа для формирования кэша
+     * @param valType Класс типа данных значения для формирования кэша
+     * @return IgniteCache<K, V> - кэш с заданными типами
+     */
+    @Override
+    public <K, V> IgniteCache<K, V> getOrCreateCustomCache(
+            String cacheName,
+            Class<K> keyType,
+            Class<V> valType
+    ) {
+        String finalCacheName = String.format("cache_%s", cacheName);
+
+        // Map хранит raw-типы, кастуем при получении
+        @SuppressWarnings("unchecked")
+        IgniteCache<K, V> cache = (IgniteCache<K, V>) customCache.computeIfAbsent(
+            finalCacheName,
+            key -> getOrCreateCache(
+                finalCacheName,
+                keyType,
+                valType,
+                cfg -> {
+                    cfg.setCacheMode(CacheMode.REPLICATED);
+                    cfg.setAtomicityMode(CacheAtomicityMode.TRANSACTIONAL);
+                }
+            )
+        );
+        return cache;
     }
 
     /**
@@ -75,12 +133,15 @@ public class IgniteCacheServiceImpl {
         return dbCache.computeIfAbsent(sourceName, key -> {
             String cacheName = String.format(DB_CACHE_PREFIX, sourceName);
 
-            CacheConfiguration<Integer, String> cacheCfg = new CacheConfiguration<>();
-            cacheCfg.setName(cacheName);
-            cacheCfg.setCacheMode(CacheMode.REPLICATED);
-            cacheCfg.setIndexedTypes(Integer.class, String.class);
-
-            return ignite.getOrCreateCache(cacheCfg);
+            return getOrCreateCache(
+                    cacheName,
+                    Integer.class,
+                    String.class,
+                    cfg -> {
+                        cfg.setCacheMode(CacheMode.REPLICATED);
+                        // если нужно, можно добавить ещё специфичные настройки
+                    }
+            );
         });
     }
 
@@ -91,28 +152,25 @@ public class IgniteCacheServiceImpl {
         String tempCacheName = String.format(TEMP_DB_CACHE_PREFIX, sourceName) +
                 "_" + System.currentTimeMillis();
 
-        CacheConfiguration<Integer, String> tempCacheCfg = new CacheConfiguration<>();
-        tempCacheCfg.setName(tempCacheName);
-        tempCacheCfg.setCacheMode(CacheMode.PARTITIONED);
-        tempCacheCfg.setIndexedTypes(Integer.class, String.class);
+        IgniteCache<Integer, String> tempCache = getOrCreateCache(
+                tempCacheName,
+                Integer.class,
+                String.class,
+                cfg -> cfg.setCacheMode(CacheMode.PARTITIONED)
+        );
 
-        IgniteCache<Integer, String> tempCache = ignite.getOrCreateCache(tempCacheCfg);
-
-        // Загружаем данные из БД
         List<SqlExpression> dbData = repository.findBySourceName(sourceName);
         Map<Integer, String> tempData = dbData.stream()
-                .collect(Collectors.toMap(
-                        SqlExpression::getId,
-                        SqlExpression::getSql
-                ));
+                .collect(Collectors.toMap(SqlExpression::getId, SqlExpression::getSql));
 
         tempCache.putAll(tempData);
         return tempCache;
     }
 
     /**
-     * Полная синхронизация: сравнить и обновить
+     * Полная синхронизация проверок с базой: сравнить и обновить
      */
+    @Override
     public CacheComparisonResult synchronizeWithDatabase(String sourceName) {
         CacheComparisonResult changes = compareCaches(sourceName);
         updateRuntimeCache(sourceName, changes);

@@ -14,9 +14,12 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
 
     @Override
     public Expr visitParse(SqlWhereParser.ParseContext ctx) {
-        // Корневое правило: просто возвращаем выражение внутри
         return visit(ctx.expression());
     }
+
+    // --------------------
+    // boolean expressions
+    // --------------------
 
     @Override
     public Expr visitAndExpr(SqlWhereParser.AndExprContext ctx) {
@@ -62,15 +65,10 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
     }
 
     @Override
-    public Expr visitFuncExpr(SqlWhereParser.FuncExprContext ctx) {
-        return visit(ctx.functionCall());
-    }
-
-    @Override
     public Expr visitLikeExpr(SqlWhereParser.LikeExprContext ctx) {
         Expr val = visit(ctx.value());
         String tk = ctx.STRING().getText();
-        String s = tk.substring(1, tk.length()-1).replace("\\'", "'");
+        String s = tk.substring(1, tk.length() - 1).replace("\\'", "'");
         return new LikeExpr(val, s);
     }
 
@@ -84,16 +82,123 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
         return new InExpr(val, options);
     }
 
+    // --------------------
+    // value expressions (arith)
+    // --------------------
+
+    /**
+     * value : additiveExpr # ValueExpr
+     */
+    @Override
+    public Expr visitValueExpr(SqlWhereParser.ValueExprContext ctx) {
+        return visit(ctx.additiveExpr());
+    }
+
+    /**
+     * additiveExpr : additiveExpr PLUS multiplicativeExpr # AddExpr
+     */
+    @Override
+    public Expr visitAddExpr(SqlWhereParser.AddExprContext ctx) {
+        return new com.gpb.datafirewall.parser.ast.AddExpr(
+                visit(ctx.additiveExpr()),
+                visit(ctx.multiplicativeExpr())
+        );
+    }
+
+    /**
+     * additiveExpr : additiveExpr MINUS multiplicativeExpr # SubExpr
+     */
+    @Override
+    public Expr visitSubExpr(SqlWhereParser.SubExprContext ctx) {
+        return new com.gpb.datafirewall.parser.ast.SubExpr(
+                visit(ctx.additiveExpr()),
+                visit(ctx.multiplicativeExpr())
+        );
+    }
+
+    /**
+     * additiveExpr : multiplicativeExpr # ToMul
+     */
+    @Override
+    public Expr visitToMul(SqlWhereParser.ToMulContext ctx) {
+        return visit(ctx.multiplicativeExpr());
+    }
+
+    /**
+     * multiplicativeExpr : multiplicativeExpr MUL unaryExpr # MulExpr
+     */
+    @Override
+    public Expr visitMulExpr(SqlWhereParser.MulExprContext ctx) {
+        return new com.gpb.datafirewall.parser.ast.MulExpr(
+                visit(ctx.multiplicativeExpr()),
+                visit(ctx.unaryExpr())
+        );
+    }
+
+    /**
+     * multiplicativeExpr : multiplicativeExpr DIV unaryExpr # DivExpr
+     */
+    @Override
+    public Expr visitDivExpr(SqlWhereParser.DivExprContext ctx) {
+        return new com.gpb.datafirewall.parser.ast.DivExpr(
+                visit(ctx.multiplicativeExpr()),
+                visit(ctx.unaryExpr())
+        );
+    }
+
+    /**
+     * multiplicativeExpr : multiplicativeExpr MOD unaryExpr # ModExpr
+     */
+    @Override
+    public Expr visitModExpr(SqlWhereParser.ModExprContext ctx) {
+        return new com.gpb.datafirewall.parser.ast.ModExpr(
+                visit(ctx.multiplicativeExpr()),
+                visit(ctx.unaryExpr())
+        );
+    }
+
+    /**
+     * multiplicativeExpr : unaryExpr # ToUnary
+     */
+    @Override
+    public Expr visitToUnary(SqlWhereParser.ToUnaryContext ctx) {
+        return visit(ctx.unaryExpr());
+    }
+
+    /**
+     * unaryExpr : MINUS unaryExpr # UnaryMinusExpr
+     */
+    @Override
+    public Expr visitUnaryMinusExpr(SqlWhereParser.UnaryMinusExprContext ctx) {
+        return new com.gpb.datafirewall.parser.ast.UnaryMinusExpr(visit(ctx.unaryExpr()));
+    }
+
+    /**
+     * unaryExpr : atom # ToAtom
+     */
+    @Override
+    public Expr visitToAtom(SqlWhereParser.ToAtomContext ctx) {
+        return visit(ctx.atom());
+    }
+
+    /**
+     * atom : LPAREN value RPAREN # ValueParen
+     */
+    @Override
+    public Expr visitValueParen(SqlWhereParser.ValueParenContext ctx) {
+        return visit(ctx.value());
+    }
+
     @Override
     public Expr visitFuncCall(SqlWhereParser.FuncCallContext ctx) {
-        // reconstruct func name with dots
         StringBuilder sb = new StringBuilder();
         List<TerminalNode> ids = ctx.IDENT();
         for (int i = 0; i < ids.size(); i++) {
-            if (i>0) sb.append(".");
+            if (i > 0) sb.append(".");
             sb.append(ids.get(i).getText());
         }
         String funcName = sb.toString();
+
         List<Expr> args = new ArrayList<>();
         if (ctx.functionArgs() != null && ctx.functionArgs().value() != null) {
             for (SqlWhereParser.ValueContext v : ctx.functionArgs().value()) {
@@ -106,15 +211,14 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
     @Override
     public Expr visitFieldValue(SqlWhereParser.FieldValueContext ctx) {
         String token = ctx.DQIDENT().getText();
-        // remove surrounding double quotes and unescape simple escapes
-        String name = token.substring(1, token.length()-1).replaceAll("\\\\\"", "\"");
+        String name = token.substring(1, token.length() - 1).replaceAll("\\\\\"", "\"");
         return new FieldExpr(name);
     }
 
     @Override
     public Expr visitStringValue(SqlWhereParser.StringValueContext ctx) {
         String tk = ctx.STRING().getText();
-        String s = tk.substring(1, tk.length()-1).replace("\\'", "'");
+        String s = tk.substring(1, tk.length() - 1).replace("\\'", "'");
         return new StringExpr(s);
     }
 
@@ -122,7 +226,7 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
     public Expr visitNumberValue(SqlWhereParser.NumberValueContext ctx) {
         return new NumberExpr(ctx.NUMBER().getText());
     }
-    
+
     @Override
     public Expr visitCastValue(SqlWhereParser.CastValueContext ctx) {
         Expr inner = visit(ctx.value());

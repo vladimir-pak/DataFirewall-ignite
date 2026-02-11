@@ -18,11 +18,10 @@ spring:
     projectName: mkad
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/spring}
-    username: ${DB_USER:ssdq}
-    password: ${DB_PASSWORD:ssdq_pass}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ignaite_local_db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:kampus}
     driverClassName: org.postgresql.Driver
-    defaultSchema: mkad
     hikari:
       maximum-pool-size: 20
       connection-timeout: 30000
@@ -36,15 +35,15 @@ spring:
     show-sql: true
     properties:
       hibernate:
-        default_schema: mkad
+        default_schema: datafirewall
 
-  # flyway:
-  #   schemas: public
-  #   enabled: true
-  #   locations: classpath:db/migration
-  #   url: ${DB_URL:jdbc:postgresql://localhost:5432/meta_base}
-  #   user: ${DB_USER:postgres}
-  #   password: ${DB_PASSWORD:postgres}
+  flyway:
+    schemas: datafirewall
+    enabled: true
+    locations: classpath:db/migration
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ignaite_local_db?currentSchema=datafirewall}
+    user: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:kampus}
 
   tomcat:
     max-connections: 100 # Максимальное количество соединений
@@ -54,9 +53,9 @@ spring:
 
 ignite:
   persistence:
-    storagePath: /Users/vladimirpak/Desktop/datafirewall/ignite/storage
-    walPath: /Users/vladimirpak/Desktop/datafirewall/ignite/wal
-    walArchivePath: /Users/vladimirpak/Desktop/datafirewall/ignite/wal-archive
+    storagePath: /Users/kampus/ignaitfairewall/DataFirewall-ignite/ignite/storage
+    walPath: /Users/kampus/ignaitfairewall/DataFirewall-ignite/ignite/wal
+    walArchivePath: /Users/kampus/ignaitfairewall/DataFirewall-ignite/ignite/wal-archive
     sslEnabled: false
     jksPassword: 12345
   network:
@@ -75,8 +74,8 @@ logs-database:
   enabled: true
   task-create-partition: 0 0 0 * * ?
   url: jdbc:postgresql://localhost:5432/log_db
-  username: ssdq
-  password: ssdq_pass
+  username: postgres
+  password: kampus
   driverClassName: org.postgresql.Driver
   table: "audit.datafirewall_log"
 

@@ -1,19 +1,8 @@
 package com.gpb.datafirewall.parser;
 
-import com.gpb.datafirewall.parser.ast.AndExpr;
-import com.gpb.datafirewall.parser.ast.CastExpr;
-import com.gpb.datafirewall.parser.ast.CompareExpr;
-import com.gpb.datafirewall.parser.ast.Expr;
-import com.gpb.datafirewall.parser.ast.FieldExpr;
-import com.gpb.datafirewall.parser.ast.FuncExpr;
-import com.gpb.datafirewall.parser.ast.InExpr;
-import com.gpb.datafirewall.parser.ast.IsNotNullExpr;
-import com.gpb.datafirewall.parser.ast.IsNullExpr;
-import com.gpb.datafirewall.parser.ast.LikeExpr;
-import com.gpb.datafirewall.parser.ast.NotExpr;
-import com.gpb.datafirewall.parser.ast.NumberExpr;
-import com.gpb.datafirewall.parser.ast.OrExpr;
-import com.gpb.datafirewall.parser.ast.StringExpr;
+import com.gpb.datafirewall.parser.ast.*;
+import java.util.*;
+import java.util.regex.*;
 
 /**
  * Генератор Java Source (код Java в String) на основе AST
@@ -22,13 +11,54 @@ public class JavaRuleGenerator {
 
     public String generate(String className, Expr expr) {
         StringBuilder sb = new StringBuilder();
-        sb.append("import java.util.*;\nimport java.util.regex.*;\nimport com.gpb.datafirewall.model.Rule;\n");
+        sb.append("import java.util.*;\n");
+        sb.append("import java.util.regex.*;\n");
+        sb.append("import com.gpb.datafirewall.model.Rule;\n");
+
         sb.append("public class ").append(className).append(" implements Rule {\n");
-        // helper methods
-        sb.append("  private String toStringSafe(Object o){return o==null?null:o.toString();}\n");
-        sb.append("  private Double toDoubleOrNull(Object v){ try{ return v==null?null:Double.valueOf(v.toString());}catch(Exception e){return null;} }\n");
-        sb.append("  private int utf8Length(String s){ return s==null?0:s.getBytes(java.nio.charset.StandardCharsets.UTF_8).length; }\n");
-        sb.append("  private boolean regexp_like(String s, String pat){ if(s==null) return false; try{ return Pattern.compile(pat).matcher(s).find(); }catch(Exception e){return false;} }\n");
+
+        // helpers
+        sb.append("  private String toStringSafe(Object o){ return o==null?null:o.toString(); }\n");
+        sb.append("  private Double toDoubleOrNull(Object v){\n");
+        sb.append("    try { return v==null?null:Double.valueOf(v.toString()); }\n");
+        sb.append("    catch(Exception e){ return null; }\n");
+        sb.append("  }\n");
+
+        // IMPORTANT: Integer, not int (nullable!)
+        sb.append("  private Integer utf8Length(String s){\n");
+        sb.append("    return s==null ? null : Integer.valueOf(s.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);\n");
+        sb.append("  }\n");
+
+        sb.append("  private boolean regexp_like(String s, String pat){\n");
+        sb.append("    if(s==null) return false;\n");
+        sb.append("    try{ return Pattern.compile(pat).matcher(s).find(); }catch(Exception e){ return false; }\n");
+        sb.append("  }\n");
+
+        // numeric compare helpers
+        sb.append("  private boolean numEq(Object a, Object b){\n");
+        sb.append("    Double da = toDoubleOrNull(a); Double db = toDoubleOrNull(b);\n");
+        sb.append("    return da != null && db != null && Double.compare(da, db) == 0;\n");
+        sb.append("  }\n");
+        sb.append("  private boolean numNe(Object a, Object b){\n");
+        sb.append("    Double da = toDoubleOrNull(a); Double db = toDoubleOrNull(b);\n");
+        sb.append("    return da != null && db != null && Double.compare(da, db) != 0;\n");
+        sb.append("  }\n");
+        sb.append("  private boolean numGt(Object a, Object b){\n");
+        sb.append("    Double da = toDoubleOrNull(a); Double db = toDoubleOrNull(b);\n");
+        sb.append("    return da != null && db != null && da > db;\n");
+        sb.append("  }\n");
+        sb.append("  private boolean numLt(Object a, Object b){\n");
+        sb.append("    Double da = toDoubleOrNull(a); Double db = toDoubleOrNull(b);\n");
+        sb.append("    return da != null && db != null && da < db;\n");
+        sb.append("  }\n");
+        sb.append("  private boolean numGe(Object a, Object b){\n");
+        sb.append("    Double da = toDoubleOrNull(a); Double db = toDoubleOrNull(b);\n");
+        sb.append("    return da != null && db != null && da >= db;\n");
+        sb.append("  }\n");
+        sb.append("  private boolean numLe(Object a, Object b){\n");
+        sb.append("    Double da = toDoubleOrNull(a); Double db = toDoubleOrNull(b);\n");
+        sb.append("    return da != null && db != null && da <= db;\n");
+        sb.append("  }\n");
 
         sb.append("  public boolean apply(java.util.Map<String,String> data){\n");
         sb.append("    try{\n");
@@ -36,105 +66,111 @@ public class JavaRuleGenerator {
         sb.append("    } catch(Exception e){ return false; }\n");
         sb.append("  }\n");
         sb.append("}\n");
+
         return sb.toString();
     }
 
+    private boolean isNumericExpr(Expr e) {
+        if (e instanceof NumberExpr) return true;
+        if (e instanceof FuncExpr f) {
+            String fn = f.funcName.toLowerCase();
+            return fn.equals("syslib.utf8_length") || fn.equals("utf8_length") || fn.equals("length");
+        }
+        return false;
+    }
+
     private String genExpr(Expr e) {
-        if (e instanceof FieldExpr) {
-            String key = ((FieldExpr)e).name;
-            return "toStringSafe(data.get(\"" + escapeJava(key) + "\"))";
+        if (e instanceof FieldExpr fe) {
+            return "toStringSafe(data.get(\"" + escapeJava(fe.name) + "\"))";
         }
-        if (e instanceof StringExpr) {
-            return "\"" + escapeJava(((StringExpr)e).value) + "\"";
+        if (e instanceof StringExpr se) {
+            return "\"" + escapeJava(se.value) + "\"";
         }
-        if (e instanceof NumberExpr) {
-            return ((NumberExpr)e).value;
+        if (e instanceof NumberExpr ne) {
+            return ne.value; // как текст числа
         }
-        if (e instanceof CompareExpr) {
-            CompareExpr c = (CompareExpr)e;
-            String l = genExpr(c.left);
-            String r = genExpr(c.right);
-            switch(c.op) {
-                case "=": return "(" + l + "!=null && " + l + ".equals(" + r + "))";
-                case "!=": case "<>": return "(" + l + "==null || !" + l + ".equals(" + r + "))";
-                case ">": return "( (toDoubleOrNull(" + l + ")!=null) && (toDoubleOrNull(" + r + ")!=null) && toDoubleOrNull(" + l + ") > toDoubleOrNull(" + r + ") )";
-                case "<": return "( (toDoubleOrNull(" + l + ")!=null) && (toDoubleOrNull(" + r + ")!=null) && toDoubleOrNull(" + l + ") < toDoubleOrNull(" + r + ") )";
-                case ">=": return "( (toDoubleOrNull(" + l + ")!=null) && (toDoubleOrNull(" + r + ")!=null) && toDoubleOrNull(" + l + ") >= toDoubleOrNull(" + r + ") )";
-                case "<=": return "( (toDoubleOrNull(" + l + ")!=null) && (toDoubleOrNull(" + r + ")!=null) && toDoubleOrNull(" + l + ") <= toDoubleOrNull(" + r + ") )";
+        if (e instanceof CompareExpr ce) {
+            String l = genExpr(ce.left);
+            String r = genExpr(ce.right);
+
+            boolean numeric = isNumericExpr(ce.left) || isNumericExpr(ce.right)
+                    || ce.op.equals(">") || ce.op.equals("<") || ce.op.equals(">=") || ce.op.equals("<=");
+
+            if (numeric) {
+                return switch (ce.op) {
+                    case "="  -> "numEq(" + l + "," + r + ")";
+                    case "!=" , "<>" -> "numNe(" + l + "," + r + ")";
+                    case ">"  -> "numGt(" + l + "," + r + ")";
+                    case "<"  -> "numLt(" + l + "," + r + ")";
+                    case ">=" -> "numGe(" + l + "," + r + ")";
+                    case "<=" -> "numLe(" + l + "," + r + ")";
+                    default -> throw new IllegalStateException("Unknown op: " + ce.op);
+                };
             }
+
+            // string compare (nullable safe)
+            return switch (ce.op) {
+                case "=" -> "(" + l + "!=null && " + l + ".equals(" + r + "))";
+                case "!=" , "<>" -> "(" + l + "==null || !" + l + ".equals(" + r + "))";
+                default -> throw new IllegalStateException("Unsupported op for strings: " + ce.op);
+            };
         }
-        if (e instanceof IsNullExpr) {
-            return "(" + genExpr(((IsNullExpr)e).expr) + "==null)";
+
+        if (e instanceof IsNullExpr ine) {
+            return "(" + genExpr(ine.expr) + "==null)";
         }
-        if (e instanceof IsNotNullExpr) {
-            return "(" + genExpr(((IsNotNullExpr)e).expr) + "!=null)";
+        if (e instanceof IsNotNullExpr inne) {
+            return "(" + genExpr(inne.expr) + "!=null)";
         }
-        if (e instanceof LikeExpr) {
-            LikeExpr l = (LikeExpr) e;
-            String val = genExpr(l.value);
-            String regex = escapeJava(l.pattern)
-                    .replace("%", ".*")
-                    .replace("_", ".");
+        if (e instanceof LikeExpr le) {
+            String val = genExpr(le.value);
+            String regex = escapeJava(le.pattern).replace("%", ".*").replace("_", ".");
             return "(toStringSafe(" + val + ")!=null && toStringSafe(" + val + ").matches(\"" + regex + "\"))";
         }
-        if (e instanceof InExpr) {
-            InExpr in = (InExpr) e;
+        if (e instanceof InExpr in) {
             String val = "toStringSafe(" + genExpr(in.value) + ")";
-            StringBuilder sb = new StringBuilder();
-            sb.append("(");
+            StringBuilder sb = new StringBuilder("(");
             for (int i = 0; i < in.options.size(); i++) {
-                String opt = genExpr(in.options.get(i));
-                if (i>0) sb.append(" || ");
-                sb.append(val).append("!=null && ").append(val).append(".equals(").append(opt).append(")");
+                if (i > 0) sb.append(" || ");
+                sb.append(val).append("!=null && ").append(val).append(".equals(").append(genExpr(in.options.get(i))).append(")");
             }
-            if (in.options.isEmpty()) {
-                sb.append("false");
-            }
+            if (in.options.isEmpty()) sb.append("false");
             sb.append(")");
             return sb.toString();
         }
-        if (e instanceof AndExpr) {
-            return "(" + genExpr(((AndExpr)e).left) + " && " + genExpr(((AndExpr)e).right) + ")";
+        if (e instanceof AndExpr ae) {
+            return "(" + genExpr(ae.left) + " && " + genExpr(ae.right) + ")";
         }
-        if (e instanceof OrExpr) {
-            return "(" + genExpr(((OrExpr)e).left) + " || " + genExpr(((OrExpr)e).right) + ")";
+        if (e instanceof OrExpr oe) {
+            return "(" + genExpr(oe.left) + " || " + genExpr(oe.right) + ")";
         }
-        if (e instanceof NotExpr) {
-            return "(!" + genExpr(((NotExpr)e).expr) + ")";
+        if (e instanceof NotExpr ne) {
+            return "(!" + genExpr(ne.expr) + ")";
         }
-        if (e instanceof FuncExpr) {
-            FuncExpr f = (FuncExpr)e;
+        if (e instanceof FuncExpr f) {
             String fname = f.funcName.toLowerCase();
-            // handle common functions
-            if (fname.equals("syslib.utf8_length") || fname.equals("utf8_length")) {
+
+            if (fname.equals("syslib.utf8_length") || fname.equals("utf8_length") || fname.equals("length")) {
                 return "utf8Length(" + genExpr(f.args.get(0)) + ")";
             }
             if (fname.equals("regexp_like")) {
                 return "regexp_like(" + genExpr(f.args.get(0)) + "," + genExpr(f.args.get(1)) + ")";
             }
             if (fname.equals("upper")) {
-                return "toStringSafe(" + genExpr(f.args.get(0)) + ").toUpperCase()";
-            }
-            if (fname.equals("now") || fname.equals("current_timestamp")) {
-                return "java.lang.System.currentTimeMillis()";
+                return "(toStringSafe(" + genExpr(f.args.get(0)) + ")==null?null:toStringSafe(" + genExpr(f.args.get(0)) + ").toUpperCase())";
             }
             if (fname.equals("cast")) {
-                // but cast handled earlier as CastExpr; fallback to toString
                 return "toStringSafe(" + genExpr(f.args.get(0)) + ")";
             }
-            // generic: call toStringSafe
-            if (f.args.isEmpty()) {
-                return "null";
-            }
+
+            if (f.args.isEmpty()) return "null";
             return "toStringSafe(" + genExpr(f.args.get(0)) + ")";
         }
-        if (e instanceof CastExpr) {
-            CastExpr c = (CastExpr) e;
-            String inner = genExpr(c.expr);
-            // only support CAST(... AS string) for now
-            return "toStringSafe(" + inner + ")";
+
+        if (e instanceof CastExpr c) {
+            return "toStringSafe(" + genExpr(c.expr) + ")";
         }
-        // fallback
+
         throw new IllegalStateException("Unhandled expr type: " + e.getClass());
     }
 

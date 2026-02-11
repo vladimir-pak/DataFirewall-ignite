@@ -17,6 +17,7 @@ import com.gpb.datafirewall.cef.enums.SvoiSeverityEnum;
 import com.gpb.datafirewall.cef.model.Log;
 import com.gpb.datafirewall.cef.repository.LogPartitionRepository;
 import com.gpb.datafirewall.cef.repository.LogRepository;
+import com.gpb.datafirewall.service.FlinkClassLoaderService;
 import com.gpb.datafirewall.utils.Utils;
 
 import jakarta.annotation.PostConstruct;
@@ -35,18 +36,30 @@ public class IgniteApplciation {
 	private final LogPartitionRepository logPartitionRepository;
 	private final LogRepository logRepository;
 	private final ConfigurableEnvironment configurableEnvironment;
+
+	private final FlinkClassLoaderService flinkClassLoaderService;
+
 	private static ConfigurableApplicationContext applicationContext;
 
 	@PostConstruct
 	public void startupApplication() {
 		logPartitionRepository.createTodayPartition();
+
 		svoiCustomLogger.sendInternal(
-				"startService", 
-				"Start Service", 
-				"Started service", 
-				SvoiSeverityEnum.ONE);
-		
+				"startService",
+				"Start Service",
+				"Started service",
+				SvoiSeverityEnum.ONE
+		);
+
 		checkConfigChanges();
+
+		// ⚠️ Лучше не валить весь старт приложения из-за правил (по желанию)
+		try {
+			flinkClassLoaderService.updateRules("УСЛиК");
+		} catch (Exception e) {
+			log.error("Failed to update rules on startup for sourceName=УСЛиК", e);
+		}
 	}
 
 	private void checkConfigChanges() {
@@ -57,20 +70,23 @@ public class IgniteApplciation {
 		Log logEntity = logRepository.findLatestByType("checkConfig", localHostName);
 		if (logEntity == null) {
 			svoiCustomLogger.sendInternal(
-					"checkConfig", 
-					"Check Config", 
-					propsHash, 
-					SvoiSeverityEnum.ONE);
+					"checkConfig",
+					"Check Config",
+					propsHash,
+					SvoiSeverityEnum.ONE
+			);
 		} else {
 			String prevHash = StringUtils.trim(
 					StringUtils.substringBetween(logEntity.getLog(), "msg=", "deviceProcessName=")
 			);
+
 			if (!StringUtils.equals(prevHash, propsHash)) {
 				svoiCustomLogger.sendInternal(
-						"checkConfig", 
-						"Check Config", 
+						"checkConfig",
+						"Check Config",
 						propsHash,
-						 SvoiSeverityEnum.ONE);
+						SvoiSeverityEnum.ONE
+				);
 			}
 		}
 	}
@@ -84,26 +100,28 @@ public class IgniteApplciation {
 	}
 
 	public static void main(String[] args) {
-		SpringApplication.run(IgniteApplciation.class, args);
+		applicationContext = SpringApplication.run(IgniteApplciation.class, args);
 	}
 
 	@PreDestroy
 	public void shutdownApplication() {
 		svoiCustomLogger.sendInternal(
-				"stopService", 
-				"Stop Service", 
-				"Stopped service", 
-				SvoiSeverityEnum.ONE);
+				"stopService",
+				"Stop Service",
+				"Stopped service",
+				SvoiSeverityEnum.ONE
+		);
 	}
 
 	public static void restart() {
 		ApplicationArguments args = applicationContext.getBean(ApplicationArguments.class);
+
 		Thread thread = new Thread(() -> {
 			applicationContext.close();
 			applicationContext = SpringApplication.run(IgniteApplciation.class, args.getSourceArgs());
 		});
+
 		thread.setDaemon(false);
 		thread.start();
 	}
-
 }

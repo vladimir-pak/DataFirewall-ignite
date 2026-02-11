@@ -114,26 +114,22 @@ public class RuleCompilerPipeline {
             int syntaxErrors = parser.getNumberOfSyntaxErrors();
             log.info("Rule {} syntax errors: {}", id, syntaxErrors);
 
-            // Если грамматика не понимает SQL (как в твоём 1252 с +-*-% и отриц. числами) — пропускаем
             if (syntaxErrors > 0) {
                 log.warn("Rule {} has {} syntax errors. Skipping compilation.", id, syntaxErrors);
                 return Map.of();
             }
 
-            // 2) AST
             Expr ast = new AstBuilder().visit(tree);
 
             // 3) Java -> bytecode (Janino)
             String javaSrc = generator.generate(className, ast);
             byte[] bytecode = JaninoJavaCompiler.compile(className, javaSrc);
 
-            // 4) return single-class map
             Map<String, byte[]> out = new HashMap<>(1);
             out.put(className, bytecode);
             return out;
 
         } catch (Exception ex) {
-            // Главное: НЕ кидаем наружу, иначе валится весь batch
             log.error("Error processing rule {} with SQL: {}. Skipping rule.", id, sql, ex);
             return Map.of();
         }

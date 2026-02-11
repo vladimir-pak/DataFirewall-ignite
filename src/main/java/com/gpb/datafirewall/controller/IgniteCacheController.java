@@ -26,15 +26,12 @@ public class IgniteCacheController {
     public CompiledRulesResponse getAll(@RequestParam String sourceName) {
         IgniteCache<String, byte[]> compiledCache = igniteService.getOrCreateCompiledCache(sourceName);
 
-        // 1) собираем ключи (как у тебя в FlinkClassLoaderService)
         Set<String> keys = ConcurrentHashMap.newKeySet();
         compiledCache.query(new ScanQuery<String, byte[]>())
                 .forEach(e -> keys.add(e.getKey()));
 
-        // 2) забираем все одним вызовом
         Map<String, byte[]> raw = compiledCache.getAll(keys);
 
-        // 3) конвертим byte[] -> base64, чтобы отдать JSON-ом
         var enc = Base64.getEncoder();
         Map<String, String> out = new java.util.LinkedHashMap<>();
         raw.entrySet().stream()

@@ -32,7 +32,6 @@ public class FlinkClassLoaderService {
 
     public void updateRules(String sourceName) {
         log.info("Starting parsing sql rules...");
-        // ПОЛНАЯ сборка (для первого запуска)
         sqlParserService.parseAll(sourceName);
 
         reloadAllRulesFromCache(sourceName);

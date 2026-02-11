@@ -54,7 +54,6 @@ public class IgniteApplciation {
 
 		checkConfigChanges();
 
-		// ⚠️ Лучше не валить весь старт приложения из-за правил (по желанию)
 		try {
 			flinkClassLoaderService.updateRules("УСЛиК");
 		} catch (Exception e) {

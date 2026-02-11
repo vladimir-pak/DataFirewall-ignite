@@ -33,14 +33,12 @@ public class SqlParserServiceImpl implements SqlParserService {
         IgniteCache<String, byte[]> compiledCache = igniteService.getOrCreateCompiledCache(sourceName);
         CacheComparisonResult changes = igniteService.compareCaches(sourceName);
 
-        // Удаление из кэша удаленных проверок
+               // Удаление из кэша удаленных проверок
         Set<String> keysToDelete = changes.getDeletedRecords().keySet().stream()
                 .map(num -> "Rule" + num)
                 .collect(Collectors.toSet());
         compiledCache.removeAll(keysToDelete);
 
-        // Добавление новых проверок и измененных
-        // Выполняется через RulePipeline - параллельная компиляция
         RuleCompilerPipeline pipeline = new RuleCompilerPipeline(2);
 
         Map<Integer, String> rules = changes.getNewRecords();

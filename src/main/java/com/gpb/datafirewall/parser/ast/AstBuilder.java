@@ -17,10 +17,6 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
         return visit(ctx.expression());
     }
 
-    // --------------------
-    // boolean expressions
-    // --------------------
-
     @Override
     public Expr visitAndExpr(SqlWhereParser.AndExprContext ctx) {
         return new AndExpr(visit(ctx.expression(0)), visit(ctx.expression(1)));
@@ -82,9 +78,6 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
         return new InExpr(val, options);
     }
 
-    // --------------------
-    // value expressions (arith)
-    // --------------------
 
     /**
      * value : additiveExpr # ValueExpr

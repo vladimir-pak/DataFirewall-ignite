@@ -17,14 +17,12 @@ public class JavaRuleGenerator {
 
         sb.append("public class ").append(className).append(" implements Rule {\n");
 
-        // helpers
         sb.append("  private String toStringSafe(Object o){ return o==null?null:o.toString(); }\n");
         sb.append("  private Double toDoubleOrNull(Object v){\n");
         sb.append("    try { return v==null?null:Double.valueOf(v.toString()); }\n");
         sb.append("    catch(Exception e){ return null; }\n");
         sb.append("  }\n");
 
-        // IMPORTANT: Integer, not int (nullable!)
         sb.append("  private Integer utf8Length(String s){\n");
         sb.append("    return s==null ? null : Integer.valueOf(s.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);\n");
         sb.append("  }\n");
@@ -34,7 +32,6 @@ public class JavaRuleGenerator {
         sb.append("    try{ return Pattern.compile(pat).matcher(s).find(); }catch(Exception e){ return false; }\n");
         sb.append("  }\n");
 
-        // numeric compare helpers
         sb.append("  private boolean numEq(Object a, Object b){\n");
         sb.append("    Double da = toDoubleOrNull(a); Double db = toDoubleOrNull(b);\n");
         sb.append("    return da != null && db != null && Double.compare(da, db) == 0;\n");
@@ -108,7 +105,6 @@ public class JavaRuleGenerator {
                 };
             }
 
-            // string compare (nullable safe)
             return switch (ce.op) {
                 case "=" -> "(" + l + "!=null && " + l + ".equals(" + r + "))";
                 case "!=" , "<>" -> "(" + l + "==null || !" + l + ".equals(" + r + "))";

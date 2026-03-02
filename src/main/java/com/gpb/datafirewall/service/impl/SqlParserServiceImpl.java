@@ -13,13 +13,11 @@ import com.gpb.datafirewall.cache.CacheComparisonResult;
 import com.gpb.datafirewall.cef.SvoiLogger;
 import com.gpb.datafirewall.compile.RuleCompilerPipeline;
 import com.gpb.datafirewall.service.SqlParserService;
+import com.gpb.datafirewall.parser.SqlTextNormalizer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Парсинг SQL -> AST -> byte[] и запись в IgniteCache.
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -33,7 +31,6 @@ public class SqlParserServiceImpl implements SqlParserService {
         IgniteCache<String, byte[]> compiledCache = igniteService.getOrCreateCompiledCache(sourceName);
         CacheComparisonResult changes = igniteService.compareCaches(sourceName);
 
-               // Удаление из кэша удаленных проверок
         Set<String> keysToDelete = changes.getDeletedRecords().keySet().stream()
                 .map(num -> "Rule" + num)
                 .collect(Collectors.toSet());
@@ -46,7 +43,14 @@ public class SqlParserServiceImpl implements SqlParserService {
             rules.putAll(changes.getModifiedRecords());
         }
 
-        Map<String, byte[]> compiled = pipeline.process(rules);
+        // ✅ Нормализация перед компиляцией (БД не меняем)
+        Map<Integer, String> normalized = rules.entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        e -> SqlTextNormalizer.normalize(e.getValue())
+                ));
+
+        Map<String, byte[]> compiled = pipeline.process(normalized);
         log.info("Compiled {} rules", compiled.size());
 
         pipeline.shutdown();
@@ -54,16 +58,15 @@ public class SqlParserServiceImpl implements SqlParserService {
         compiledCache.putAll(compiled);
     }
 
-    /**
-     * ПОЛНАЯ пересборка: компилирует все правила из БД и кладёт в compiledCache
-     * (для первого запуска /   ручная- ресинхронизации)
-     */
     @Override
     public void parseAll(String sourceName) {
         IgniteCache<String, byte[]> compiledCache = igniteService.getOrCreateCompiledCache(sourceName);
 
         Map<Integer, String> rulesSql = repository.findBySourceName(sourceName).stream()
-                .collect(Collectors.toMap(SqlExpression::getId, SqlExpression::getSql));
+                .collect(Collectors.toMap(
+                        SqlExpression::getId,
+                        e -> SqlTextNormalizer.normalize(e.getSql())
+                ));
 
         if (rulesSql.isEmpty()) {
             log.warn("No sql_expressions found in DB for sourceName={}", sourceName);
@@ -76,9 +79,7 @@ public class SqlParserServiceImpl implements SqlParserService {
 
         log.info("Compiled {} rules (FULL) for sourceName={}", compiled.size(), sourceName);
 
-        // чтобы не оставались старые классы
         compiledCache.clear();
         compiledCache.putAll(compiled);
     }
-
 }

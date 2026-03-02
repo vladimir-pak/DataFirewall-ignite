@@ -1,21 +1,27 @@
 package com.gpb.datafirewall.parser.ast;
 
-import org.antlr.v4.runtime.tree.TerminalNode;
-
 import com.gpb.datafirewall.rules.parser.SqlWhereBaseVisitor;
 import com.gpb.datafirewall.rules.parser.SqlWhereParser;
+import org.antlr.v4.runtime.tree.TerminalNode;
 
 import java.util.*;
+import java.util.regex.Pattern;
 
-/**
- * AST builder, парсинг из SQL с помощью ANTLR
- */
 public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
+
+    // эвристика: если содержимое "..." похоже на regex-паттерн — это строка, а не поле
+    private static final Pattern REGEX_LIKE = Pattern.compile(
+            "^(\\^|\\.\\*)|.*(\\[|\\]|\\{|\\}|\\\\d|\\\\s|\\||\\$|\\(|\\)|\\+|\\?|\\*).*"
+    );
 
     @Override
     public Expr visitParse(SqlWhereParser.ParseContext ctx) {
         return visit(ctx.expression());
     }
+
+    // --------------------
+    // Boolean layer
+    // --------------------
 
     @Override
     public Expr visitAndExpr(SqlWhereParser.AndExprContext ctx) {
@@ -42,6 +48,10 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
         return visit(ctx.predicate());
     }
 
+    // --------------------
+    // Predicates
+    // --------------------
+
     @Override
     public Expr visitIsNullExpr(SqlWhereParser.IsNullExprContext ctx) {
         return new IsNullExpr(visit(ctx.value()));
@@ -63,9 +73,8 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
     @Override
     public Expr visitLikeExpr(SqlWhereParser.LikeExprContext ctx) {
         Expr val = visit(ctx.value());
-        String tk = ctx.STRING().getText();
-        String s = tk.substring(1, tk.length() - 1).replace("\\'", "'");
-        return new LikeExpr(val, s);
+        String pattern = unquoteSingle(ctx.STRING().getText());
+        return new LikeExpr(val, pattern);
     }
 
     @Override
@@ -78,109 +87,143 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
         return new InExpr(val, options);
     }
 
+    @Override
+    public Expr visitRegexpExpr(SqlWhereParser.RegexpExprContext ctx) {
+        Expr left = visit(ctx.value());
+        Expr pattern;
 
-    /**
-     * value : additiveExpr # ValueExpr
-     */
+        if (ctx.STRING() != null) {
+            pattern = new StringExpr(unquoteSingle(ctx.STRING().getText()));
+        } else {
+            String raw = unquoteDouble(ctx.DQIDENT().getText()).replace("\\\"", "\"");
+            pattern = new StringExpr(raw);
+        }
+
+        return new FuncExpr("regexp_like", List.of(left, pattern));
+    }
+
+    @Override
+    public Expr visitFuncPredicateExpr(SqlWhereParser.FuncPredicateExprContext ctx) {
+        return visit(ctx.functionCall());
+    }
+
+    // --------------------
+    // Value/arithmetic layer
+    // --------------------
+
     @Override
     public Expr visitValueExpr(SqlWhereParser.ValueExprContext ctx) {
         return visit(ctx.additiveExpr());
     }
 
-    /**
-     * additiveExpr : additiveExpr PLUS multiplicativeExpr # AddExpr
-     */
     @Override
     public Expr visitAddExpr(SqlWhereParser.AddExprContext ctx) {
-        return new com.gpb.datafirewall.parser.ast.AddExpr(
-                visit(ctx.additiveExpr()),
-                visit(ctx.multiplicativeExpr())
-        );
+        return new AddExpr(visit(ctx.additiveExpr()), visit(ctx.multiplicativeExpr()));
     }
 
-    /**
-     * additiveExpr : additiveExpr MINUS multiplicativeExpr # SubExpr
-     */
     @Override
     public Expr visitSubExpr(SqlWhereParser.SubExprContext ctx) {
-        return new com.gpb.datafirewall.parser.ast.SubExpr(
-                visit(ctx.additiveExpr()),
-                visit(ctx.multiplicativeExpr())
-        );
+        return new SubExpr(visit(ctx.additiveExpr()), visit(ctx.multiplicativeExpr()));
     }
 
-    /**
-     * additiveExpr : multiplicativeExpr # ToMul
-     */
     @Override
     public Expr visitToMul(SqlWhereParser.ToMulContext ctx) {
         return visit(ctx.multiplicativeExpr());
     }
 
-    /**
-     * multiplicativeExpr : multiplicativeExpr MUL unaryExpr # MulExpr
-     */
     @Override
     public Expr visitMulExpr(SqlWhereParser.MulExprContext ctx) {
-        return new com.gpb.datafirewall.parser.ast.MulExpr(
-                visit(ctx.multiplicativeExpr()),
-                visit(ctx.unaryExpr())
-        );
+        return new MulExpr(visit(ctx.multiplicativeExpr()), visit(ctx.unaryExpr()));
     }
 
-    /**
-     * multiplicativeExpr : multiplicativeExpr DIV unaryExpr # DivExpr
-     */
     @Override
     public Expr visitDivExpr(SqlWhereParser.DivExprContext ctx) {
-        return new com.gpb.datafirewall.parser.ast.DivExpr(
-                visit(ctx.multiplicativeExpr()),
-                visit(ctx.unaryExpr())
-        );
+        return new DivExpr(visit(ctx.multiplicativeExpr()), visit(ctx.unaryExpr()));
     }
 
-    /**
-     * multiplicativeExpr : multiplicativeExpr MOD unaryExpr # ModExpr
-     */
     @Override
     public Expr visitModExpr(SqlWhereParser.ModExprContext ctx) {
-        return new com.gpb.datafirewall.parser.ast.ModExpr(
-                visit(ctx.multiplicativeExpr()),
-                visit(ctx.unaryExpr())
-        );
+        return new ModExpr(visit(ctx.multiplicativeExpr()), visit(ctx.unaryExpr()));
     }
 
-    /**
-     * multiplicativeExpr : unaryExpr # ToUnary
-     */
     @Override
     public Expr visitToUnary(SqlWhereParser.ToUnaryContext ctx) {
         return visit(ctx.unaryExpr());
     }
 
-    /**
-     * unaryExpr : MINUS unaryExpr # UnaryMinusExpr
-     */
     @Override
     public Expr visitUnaryMinusExpr(SqlWhereParser.UnaryMinusExprContext ctx) {
-        return new com.gpb.datafirewall.parser.ast.UnaryMinusExpr(visit(ctx.unaryExpr()));
+        return new UnaryMinusExpr(visit(ctx.unaryExpr()));
     }
 
-    /**
-     * unaryExpr : atom # ToAtom
-     */
     @Override
     public Expr visitToAtom(SqlWhereParser.ToAtomContext ctx) {
         return visit(ctx.atom());
     }
 
-    /**
-     * atom : LPAREN value RPAREN # ValueParen
-     */
+    // --------------------
+    // Atoms
+    // --------------------
+
+    @Override
+    public Expr visitFieldValue(SqlWhereParser.FieldValueContext ctx) {
+        String inner = unquoteDouble(ctx.DQIDENT().getText()).replace("\\\"", "\"");
+
+        if (REGEX_LIKE.matcher(inner).matches()) {
+            return new StringExpr(inner);
+        }
+        return new FieldExpr(inner);
+    }
+
+    @Override
+    public Expr visitNumberValue(SqlWhereParser.NumberValueContext ctx) {
+        return new NumberExpr(ctx.NUMBER().getText());
+    }
+
+    @Override
+    public Expr visitStringValue(SqlWhereParser.StringValueContext ctx) {
+        return new StringExpr(unquoteSingle(ctx.STRING().getText()));
+    }
+
+    @Override
+    public Expr visitFuncValue(SqlWhereParser.FuncValueContext ctx) {
+        return visit(ctx.functionCall());
+    }
+
+    @Override
+    public Expr visitCastValue(SqlWhereParser.CastValueContext ctx) {
+        Expr inner = visit(ctx.value());
+        String asType = ctx.IDENT().getText();
+        return new CastExpr(inner, asType);
+    }
+
+    @Override
+    public Expr visitExtractValue(SqlWhereParser.ExtractValueContext ctx) {
+        String unit = ctx.IDENT().getText();
+        Expr fromExpr = visit(ctx.value());
+        return new FuncExpr("extract", List.of(new StringExpr(unit), fromExpr));
+    }
+
+    @Override
+    public Expr visitIntervalValue(SqlWhereParser.IntervalValueContext ctx) {
+        String lit = unquoteSingle(ctx.STRING().getText());
+        return new IntervalExpr(lit);
+    }
+
+    @Override
+    public Expr visitIdentValue(SqlWhereParser.IdentValueContext ctx) {
+        String name = ctx.IDENT().getText();
+        return new FuncExpr(name, Collections.emptyList());
+    }
+
     @Override
     public Expr visitValueParen(SqlWhereParser.ValueParenContext ctx) {
         return visit(ctx.value());
     }
+
+    // --------------------
+    // Functions
+    // --------------------
 
     @Override
     public Expr visitFuncCall(SqlWhereParser.FuncCallContext ctx) {
@@ -201,29 +244,18 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
         return new FuncExpr(funcName, args);
     }
 
-    @Override
-    public Expr visitFieldValue(SqlWhereParser.FieldValueContext ctx) {
-        String token = ctx.DQIDENT().getText();
-        String name = token.substring(1, token.length() - 1).replaceAll("\\\\\"", "\"");
-        return new FieldExpr(name);
+    // --------------------
+    // Helpers
+    // --------------------
+
+    private static String unquoteSingle(String tk) {
+        String s = tk.substring(1, tk.length() - 1);
+        s = s.replace("''", "'");
+        s = s.replace("\\'", "'");
+        return s;
     }
 
-    @Override
-    public Expr visitStringValue(SqlWhereParser.StringValueContext ctx) {
-        String tk = ctx.STRING().getText();
-        String s = tk.substring(1, tk.length() - 1).replace("\\'", "'");
-        return new StringExpr(s);
-    }
-
-    @Override
-    public Expr visitNumberValue(SqlWhereParser.NumberValueContext ctx) {
-        return new NumberExpr(ctx.NUMBER().getText());
-    }
-
-    @Override
-    public Expr visitCastValue(SqlWhereParser.CastValueContext ctx) {
-        Expr inner = visit(ctx.value());
-        String asType = ctx.IDENT().getText();
-        return new CastExpr(inner, asType);
+    private static String unquoteDouble(String tk) {
+        return tk.substring(1, tk.length() - 1);
     }
 }

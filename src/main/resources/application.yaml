@@ -45,6 +45,7 @@ spring:
     user: ${DB_USER:postgres}
     password: ${DB_PASSWORD:kampus}
 
+
   tomcat:
     max-connections: 100 # Максимальное количество соединений
     accept-count: 100 # Максимальное количество потоков
@@ -97,6 +98,7 @@ logging:
     org.apache.flink: INFO
     org.springframework.jdbc: WARN
     com.gpb.replication.postgres: DEBUG
+    org.flywaydb: DEBUG
   file:
     name: logs/datafirewall.log
   pattern:

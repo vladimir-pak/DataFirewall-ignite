@@ -5,24 +5,35 @@ parse
     ;
 
 // --------------------
-// Boolean layer
+// Boolean layer with precedence:
+// OR < AND < NOT < predicate
 // --------------------
 
 expression
-    : expression AND expression    # AndExpr
-    | expression OR expression     # OrExpr
-    | NOT expression               # NotExpr
-    | predicate                    # PredicateOnly
-    | LPAREN expression RPAREN     # ParenExpr
+    : orExpression
+    ;
+
+orExpression
+    : andExpression (OR andExpression)*          # OrChainExpr
+    ;
+
+andExpression
+    : notExpression (AND notExpression)*         # AndChainExpr
+    ;
+
+notExpression
+    : NOT notExpression                          # NotExpr
+    | predicate                                  # PredicateOnly
+    | LPAREN expression RPAREN                   # ParenExpr
     ;
 
 predicate
-    : value IS NULL_                                   # IsNullExpr
-    | value IS NOT NULL_                               # IsNotNullExpr
-    | value cmpOp value                                # CompareExpr
-    | value LIKE STRING                                # LikeExpr
-    | value IN LPAREN value (COMMA value)* RPAREN      # InExpr
-    | value NOT LIKE STRING                            # NotLikeExpr
+    : value IS NULL_                                    # IsNullExpr
+    | value IS NOT NULL_                                # IsNotNullExpr
+    | value cmpOp value                                 # CompareExpr
+    | value LIKE STRING                                 # LikeExpr
+    | value IN LPAREN value (COMMA value)* RPAREN       # InExpr
+    | value NOT LIKE STRING                             # NotLikeExpr
     | value NOT IN LPAREN value (COMMA value)* RPAREN   # NotInExpr
     | value NOT BETWEEN value AND value                 # NotBetweenExpr
     | value BETWEEN value AND value                     # BetweenExpr

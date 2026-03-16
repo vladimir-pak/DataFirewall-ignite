@@ -86,6 +86,11 @@ clean-database-logs:
   # delete logs from db that older than X days
   clean-period: 1080
 
+datafirewall:
+  generated-rules:
+    enabled: true
+    output-dir: ./generated-rules
+
 logging:
   cef:
     path: logs

@@ -5,14 +5,8 @@ import com.gpb.datafirewall.rules.parser.SqlWhereParser;
 import org.antlr.v4.runtime.tree.TerminalNode;
 
 import java.util.*;
-import java.util.regex.Pattern;
 
 public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
-
-    // эвристика: если содержимое "..." похоже на regex-паттерн — это строка, а не поле
-    private static final Pattern REGEX_LIKE = Pattern.compile(
-            "^(\\^|\\.\\*)|.*(\\[|\\]|\\{|\\}|\\\\d|\\\\s|\\||\\$|\\(|\\)|\\+|\\?|\\*).*"
-    );
 
     @Override
     public Expr visitParse(SqlWhereParser.ParseContext ctx) {
@@ -24,18 +18,26 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
     // --------------------
 
     @Override
-    public Expr visitAndExpr(SqlWhereParser.AndExprContext ctx) {
-        return new AndExpr(visit(ctx.expression(0)), visit(ctx.expression(1)));
+    public Expr visitOrChainExpr(SqlWhereParser.OrChainExprContext ctx) {
+        Expr result = visit(ctx.andExpression(0));
+        for (int i = 1; i < ctx.andExpression().size(); i++) {
+            result = new OrExpr(result, visit(ctx.andExpression(i)));
+        }
+        return result;
     }
 
     @Override
-    public Expr visitOrExpr(SqlWhereParser.OrExprContext ctx) {
-        return new OrExpr(visit(ctx.expression(0)), visit(ctx.expression(1)));
+    public Expr visitAndChainExpr(SqlWhereParser.AndChainExprContext ctx) {
+        Expr result = visit(ctx.notExpression(0));
+        for (int i = 1; i < ctx.notExpression().size(); i++) {
+            result = new AndExpr(result, visit(ctx.notExpression(i)));
+        }
+        return result;
     }
 
     @Override
     public Expr visitNotExpr(SqlWhereParser.NotExprContext ctx) {
-        return new NotExpr(visit(ctx.expression()));
+        return new NotExpr(visit(ctx.notExpression()));
     }
 
     @Override
@@ -168,10 +170,6 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
     @Override
     public Expr visitFieldValue(SqlWhereParser.FieldValueContext ctx) {
         String inner = unquoteDouble(ctx.DQIDENT().getText()).replace("\\\"", "\"");
-
-        if (REGEX_LIKE.matcher(inner).matches()) {
-            return new StringExpr(inner);
-        }
         return new FieldExpr(inner);
     }
 
@@ -252,6 +250,7 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
         String s = tk.substring(1, tk.length() - 1);
         s = s.replace("''", "'");
         s = s.replace("\\'", "'");
+        s = s.replace("\\\\", "\\");
         return s;
     }
 

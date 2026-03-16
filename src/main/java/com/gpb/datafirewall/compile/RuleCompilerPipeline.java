@@ -1,5 +1,9 @@
 package com.gpb.datafirewall.compile;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -20,6 +24,9 @@ import lombok.extern.slf4j.Slf4j;
  * Пайплайн для генерации byte[] из SQL:
  * SQL -> ANTLR parse -> AST -> Java source -> Janino compile -> byte[]
  *
+ * Дополнительно:
+ * - сохраняет generated Java source в .java файлы
+ *
  * Важно:
  * - НЕ валит весь пайплайн, если одно правило не собирается (continue-on-error).
  * - Если у правила есть syntax errors на уровне ANTLR, правило пропускается.
@@ -29,11 +36,26 @@ public class RuleCompilerPipeline {
 
     private final ExecutorService pool;
     private final JavaRuleGenerator generator;
+    private final Path outputDir;
 
     public RuleCompilerPipeline(int threads) {
+        this(threads, "generated-rules");
+    }
+
+    public RuleCompilerPipeline(int threads, String outputDir) {
         int safeThreads = Math.max(1, threads);
         this.pool = Executors.newFixedThreadPool(safeThreads);
         this.generator = new JavaRuleGenerator();
+        this.outputDir = Path.of(outputDir);
+
+        try {
+            Files.createDirectories(this.outputDir);
+            log.info("Generated rules directory: {}", this.outputDir.toAbsolutePath());
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                    "Cannot create output dir for generated rules: " + this.outputDir.toAbsolutePath(), e
+            );
+        }
     }
 
     /**
@@ -119,10 +141,16 @@ public class RuleCompilerPipeline {
                 return Map.of();
             }
 
+            // 2) AST
             Expr ast = new AstBuilder().visit(tree);
 
-            // 3) Java -> bytecode (Janino)
+            // 3) Генерация Java source
             String javaSrc = generator.generate(className, ast);
+
+            // 4) Сохраняем .java
+            saveJavaSource(className, javaSrc);
+
+            // 5) Компилируем в bytecode
             byte[] bytecode = JaninoJavaCompiler.compile(className, javaSrc);
 
             Map<String, byte[]> out = new HashMap<>(1);
@@ -132,6 +160,16 @@ public class RuleCompilerPipeline {
         } catch (Exception ex) {
             log.error("Error processing rule {} with SQL: {}. Skipping rule.", id, sql, ex);
             return Map.of();
+        }
+    }
+
+    private void saveJavaSource(String className, String javaSrc) {
+        try {
+            Path file = outputDir.resolve(className + ".java");
+            Files.writeString(file, javaSrc, StandardCharsets.UTF_8);
+            log.info("Saved generated rule source: {}", file.toAbsolutePath());
+        } catch (IOException e) {
+            log.error("Failed to save generated Java source for {}", className, e);
         }
     }
 

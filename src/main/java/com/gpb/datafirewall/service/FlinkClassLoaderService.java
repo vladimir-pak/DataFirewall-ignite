@@ -25,18 +25,19 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 @Slf4j
 public class FlinkClassLoaderService {
+
     private final IgniteCacheServiceImpl igniteService;
     private final CompiledRulesContainer compiledRules;
     private final SqlParserService sqlParserService;
 
     public void updateRules(String sourceName) {
         log.info("Starting parsing sql rules...");
-        sqlParserService.parse(sourceName);
+        sqlParserService.parseAll(sourceName);
+
         reloadAllRulesFromCache(sourceName);
     }
 
     private void reloadAllRulesFromCache(String sourceName) {
-        // 1. Читаем байткод из Ignite
         IgniteCache<String, byte[]> compiledCache = igniteService.getOrCreateCompiledCache(sourceName);
 
         Set<String> keys = ConcurrentHashMap.newKeySet();
@@ -45,10 +46,8 @@ public class FlinkClassLoaderService {
 
         Map<String, byte[]> mapCache = compiledCache.getAll(keys);
 
-        // 2. Создаём новый ClassLoader на основе актуального байткода
         RuleClassLoader classLoader = new RuleClassLoader(mapCache);
 
-        // 3. Строим НОВУЮ Map с инстансами правил
         Map<String, Rule> newRules = new HashMap<>();
 
         List<String> sorted = keys.stream().sorted().toList();
@@ -62,13 +61,6 @@ public class FlinkClassLoaderService {
             }
         }
 
-        // 4. АТОМАРНО подменяем Map в контейнере
         compiledRules.replaceAll(newRules);
-
-        // 5. После этого:
-        // - все новые запросы берут новые Rule из новой Map
-        // - старый ClassLoader + старые Rule останутся только у "висящих" запросов
-        //   и будут собраны GC, когда закончится их выполнение
     }
 }
-    

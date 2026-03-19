@@ -66,11 +66,14 @@
         </dependency> -->
 
 		<!-- Flyway -->
-		<!-- <dependency>
+		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-core</artifactId>
-			<version>9.16.0</version>
-		</dependency> -->
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
+		</dependency>
 
 		<!-- Postgres DB -->
 		<dependency>

@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-public class DqChecksCacheRefreshServiceImpl {
+public class PoliticsCacheRefreshServiceImpl {
 
     private final DqChecksRepository dqChecksRepository;
     private final CacheVersionRepository cacheVersionRepository;

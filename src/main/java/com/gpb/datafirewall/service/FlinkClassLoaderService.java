@@ -1,19 +1,22 @@
 package com.gpb.datafirewall.service;
 
 import java.util.HashMap;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
-import org.apache.ignite.IgniteCache;
+import javax.cache.Cache;
+
+import org.apache.ignite.cache.query.QueryCursor;
 import org.apache.ignite.cache.query.ScanQuery;
+import org.apache.ignite.client.ClientCache;
 import org.springframework.stereotype.Service;
 
-import com.gpb.datafirewall.compile.CompiledRulesContainer;
-import com.gpb.datafirewall.compile.RuleClassLoader;
+import com.gpb.datafirewall.model.CacheVersion;
 import com.gpb.datafirewall.model.Rule;
-import com.gpb.datafirewall.service.impl.IgniteCacheServiceImpl;
+import com.gpb.datafirewall.properties.Caches;
+import com.gpb.datafirewall.repository.CacheVersionRepository;
+import com.gpb.datafirewall.utils.CompiledRulesContainer;
+import com.gpb.datafirewall.utils.RuleClassLoader;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,41 +29,59 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class FlinkClassLoaderService {
 
-    private final IgniteCacheServiceImpl igniteService;
+    private final IgniteCacheService igniteService;
+    private final CacheRefreshService cacheRefreshService;
     private final CompiledRulesContainer compiledRules;
-    private final SqlParserService sqlParserService;
+    private final CacheVersionRepository cacheVersionRepository;
 
-    public void updateRules(String sourceName) {
-        log.info("Starting parsing sql rules...");
-        sqlParserService.parseAll(sourceName);
+    public void updateRules() {
+        log.info("Starting refresh cache...");
+        cacheRefreshService.refreshCache();
 
-        reloadAllRulesFromCache(sourceName);
+        reloadAllRulesFromCache();
     }
 
-    private void reloadAllRulesFromCache(String sourceName) {
-        IgniteCache<String, byte[]> compiledCache = igniteService.getOrCreateCompiledCache(sourceName);
+    private void reloadAllRulesFromCache() {
 
-        Set<String> keys = ConcurrentHashMap.newKeySet();
-        compiledCache.query(new ScanQuery<String, byte[]>())
-                .forEach(entry -> keys.add(entry.getKey()));
+        CacheVersion currentVersionRow =
+                cacheVersionRepository.findTopByIdCacheNameOrderByIdVersionDesc(Caches.COMPILED_RULES.getName())
+                        .orElse(null);
 
-        Map<String, byte[]> mapCache = compiledCache.getAll(keys);
+        String fullCacheName = 
+                String.format("%s_%s", Caches.COMPILED_RULES.getName(), currentVersionRow.getId().getVersion());
+        ClientCache<String, byte[]> compiledCache = igniteService.getCacheByFullName(fullCacheName);
 
-        RuleClassLoader classLoader = new RuleClassLoader(mapCache);
+        Map<String, byte[]> cacheMap = toMap(compiledCache);
+
+        RuleClassLoader classLoader = new RuleClassLoader(cacheMap);
 
         Map<String, Rule> newRules = new HashMap<>();
 
-        List<String> sorted = keys.stream().sorted().toList();
-        for (String name : sorted) {
-            try {
-                Class<? extends Rule> ruleClass = classLoader.loadRule(name);
-                Rule ruleInstance = ruleClass.getDeclaredConstructor().newInstance();
-                newRules.put(name, ruleInstance);
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to load class " + name, e);
+        cacheMap.entrySet().stream().sorted()
+                .forEach(entry -> {
+                    try {
+                        Class<? extends Rule> ruleClass = classLoader.loadRule(entry.getKey());
+                        Rule ruleInstance = ruleClass.getDeclaredConstructor().newInstance();
+                        newRules.put(entry.getKey(), ruleInstance);
+                    } catch (Exception e) {
+                        throw new RuntimeException("Failed to load class " + entry.getKey(), e);
+                    }
+                });
+
+        compiledRules.replaceAll(newRules);
+    }
+
+    private <V> Map<String, V> toMap(ClientCache<String, V> cache) {
+        Map<String, V> result = new LinkedHashMap<>();
+
+        try (QueryCursor<Cache.Entry<String, V>> cursor =
+                    cache.query(new ScanQuery<>())) {
+
+            for (Cache.Entry<String, V> entry : cursor) {
+                result.put(entry.getKey(), entry.getValue());
             }
         }
 
-        compiledRules.replaceAll(newRules);
+        return result;
     }
 }

@@ -53,23 +53,18 @@ spring:
       max: 50 # Размер очереди запросов
 
 ignite:
-  persistence:
-    storagePath: /Users/kampus/ignaitfairewall/DataFirewall-ignite/ignite/storage
-    walPath: /Users/kampus/ignaitfairewall/DataFirewall-ignite/ignite/wal
-    walArchivePath: /Users/kampus/ignaitfairewall/DataFirewall-ignite/ignite/wal-archive
-    sslEnabled: false
-    jksPassword: 12345
-  network:
-    # Адрес, на который биндим Ignite-узел и коннектор тонкого клиента.
-    # Для внешних сервисов обычно 0.0.0.0 или реальный IP хоста.
-    localAddress: 127.0.0.1
-    # Список discovery-узлов (можно несколько через запятую), которые видят все участники кластера
-    # Например: "10.0.0.10:47500,10.0.0.11:47500"
-    discoveryAddresses: 127.0.0.1:47500
-    # Порт коммуникаций между нодами
-    communicationPort: 47100
-    # Порт тонкого клиента (thin client). Внешние сервисы будут подключаться по host:port.
-    clientConnectorPort: 10800
+  thin:
+    addresses: 10.10.1.11:10800,10.10.1.12:10800
+    connect-timeout-ms: 5000
+    ssl-enabled: false
+    username: ignite
+    password: ignite
+
+  ssl:
+    key-store-path: /opt/ignite/ssl/client.jks
+    trust-store-path: /opt/ignite/ssl/trust.jks
+    key-store-password: changeit
+    trust-store-password: changeit
 
 logs-database:
   enabled: true

@@ -1,4 +1,4 @@
-package com.gpb.datafirewall.compile;
+package com.gpb.datafirewall.utils;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;

@@ -20,7 +20,7 @@ import javax.cache.Cache;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api")
+@RequestMapping("/api/v1")
 public class IgniteCacheController {
 
     private final IgniteCacheService igniteCacheService;

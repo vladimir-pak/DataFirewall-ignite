@@ -4,8 +4,9 @@
 Байткод записывается в IgniteCache.
 
 ### IgniteCache
-- **Аутентификация** - Подключение к Ignite из внешних сервисов по логину и паролю через тонкий клиент Ignite.
-- **Наполнение** - В кэш харнятся байткоды всех проверок, выгруженных из базы Postgres. Хранение в формате IgniteCache<String, byte[]>
+- **Аутентификация** - Подключение к Ignite Server по логину и паролю через тонкий клиент Ignite.
+- **Кэш с проверками** - В кэш харнятся байткоды всех проверок, выгруженных из базы Postgres. Хранение в формате IgniteCache<String, byte[]>
+- **Кэш с политиками** - В кэш хранятся политики применения проверок.
 
 ### Парсинг SQL
 Парсинг SQL осуществляется с использованием ANTLR грамматики.
@@ -41,7 +42,7 @@ java \
   --add-opens=java.base/java.text=ALL-UNNAMED \
   --add-opens=java.management/sun.management=ALL-UNNAMED \
   --add-opens=java.desktop/java.awt.font=ALL-UNNAMED \
-  -jar metadata-ingestion-0.0.2-SNAPSHOT.jar
+  -jar datafirewall-0.0.1-SNAPSHOT.jar
   ```
 
 Для удобства запуска в корне проекта добавлен start.sh
@@ -52,3 +53,5 @@ java \
 - **/api/v1/test/compile/{serviceName}** - для парсинга и компиляции. По результатам выполнения в кэш складываются byte[] проверок, а в памяти сохраняются экземпляры классов проверок выгруженных через ClassLoader.
 
 - **/api/v1/test/start** - запуск проверок. В теле запроса подается json с данными для проверки.
+
+- **/api/v1/cache/refresh** - запуск обновления всего кэша.

@@ -39,6 +39,7 @@ public class IgniteThinClientConfig {
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
                 .toArray(String[]::new);
+                
 
         ClientConfiguration cfg = new ClientConfiguration()
                 .setAddresses(addresses)
@@ -61,42 +62,42 @@ public class IgniteThinClientConfig {
     }
 
     private SSLContext buildSslContext(IgniteSslProperties sslProps) {
-    try {
-        if (isBlank(sslProps.getKeyStorePath())
-                || isBlank(sslProps.getTrustStorePath())
-                || isBlank(sslProps.getKeyStorePassword())
-                || isBlank(sslProps.getTrustStorePassword())) {
-            throw new IllegalStateException(
-                    "SSL is enabled, but keystore/truststore settings are incomplete"
-            );
+        try {
+            if (isBlank(sslProps.getKeyStorePath())
+                    || isBlank(sslProps.getTrustStorePath())
+                    || isBlank(sslProps.getKeyStorePassword())
+                    || isBlank(sslProps.getTrustStorePassword())) {
+                throw new IllegalStateException(
+                        "SSL is enabled, but keystore/truststore settings are incomplete"
+                );
+            }
+
+            KeyStore keyStore = KeyStore.getInstance("JKS");
+            try (FileInputStream in = new FileInputStream(sslProps.getKeyStorePath())) {
+                keyStore.load(in, sslProps.getKeyStorePassword().toCharArray());
+            }
+
+            KeyManagerFactory kmf =
+                    KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            kmf.init(keyStore, sslProps.getKeyStorePassword().toCharArray());
+
+            KeyStore trustStore = KeyStore.getInstance("JKS");
+            try (FileInputStream in = new FileInputStream(sslProps.getTrustStorePath())) {
+                trustStore.load(in, sslProps.getTrustStorePassword().toCharArray());
+            }
+
+            TrustManagerFactory tmf =
+                    TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            tmf.init(trustStore);
+
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
+
+            return sslContext;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to build Ignite SSL context", e);
         }
-
-        KeyStore keyStore = KeyStore.getInstance("JKS");
-        try (FileInputStream in = new FileInputStream(sslProps.getKeyStorePath())) {
-            keyStore.load(in, sslProps.getKeyStorePassword().toCharArray());
-        }
-
-        KeyManagerFactory kmf =
-                KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        kmf.init(keyStore, sslProps.getKeyStorePassword().toCharArray());
-
-        KeyStore trustStore = KeyStore.getInstance("JKS");
-        try (FileInputStream in = new FileInputStream(sslProps.getTrustStorePath())) {
-            trustStore.load(in, sslProps.getTrustStorePassword().toCharArray());
-        }
-
-        TrustManagerFactory tmf =
-                TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        tmf.init(trustStore);
-
-        SSLContext sslContext = SSLContext.getInstance("TLS");
-        sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
-
-        return sslContext;
-    } catch (Exception e) {
-        throw new IllegalStateException("Failed to build Ignite SSL context", e);
     }
-}
 
     private boolean isBlank(String v) {
         return v == null || v.isBlank();

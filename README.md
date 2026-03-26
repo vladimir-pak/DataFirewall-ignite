@@ -1,6 +1,6 @@
 # DataFirewall-ignite
 
-Приложение на Spring Boot с Apache Ignite для парсинга SQL в исполняемый Java байткод.
+Приложение на Spring Boot с Apache Ignite Client для парсинга SQL в исполняемый Java байткод.
 Байткод записывается в IgniteCache.
 
 ### IgniteCache

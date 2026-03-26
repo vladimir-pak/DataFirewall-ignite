@@ -162,7 +162,7 @@ public class JavaRuleGenerator {
 
         sb.append("}\n");
 
-        //log.warn(sb.toString());
+        log.debug(sb.toString());
         return sb.toString();
     }
 

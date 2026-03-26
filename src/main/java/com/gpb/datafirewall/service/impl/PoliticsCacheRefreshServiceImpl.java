@@ -4,178 +4,113 @@ import com.gpb.datafirewall.service.IgniteCacheService;
 
 import lombok.RequiredArgsConstructor;
 
-import com.gpb.datafirewall.compile.RuleCompilerPipeline;
 import com.gpb.datafirewall.model.CacheVersion;
 import com.gpb.datafirewall.model.CacheVersionId;
-import com.gpb.datafirewall.model.DqChecks;
-import com.gpb.datafirewall.parser.SqlTextNormalizer;
+import com.gpb.datafirewall.model.PgStat;
 import com.gpb.datafirewall.properties.Caches;
 import com.gpb.datafirewall.repository.CacheVersionRepository;
-import com.gpb.datafirewall.repository.DqChecksRepository;
+import com.gpb.datafirewall.repository.PgStatRepository;
+import com.gpb.datafirewall.repository.PoliticsRepository;
+
 import org.apache.ignite.client.ClientCache;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class PoliticsCacheRefreshServiceImpl {
 
-    private final DqChecksRepository dqChecksRepository;
+    private final PgStatRepository pgStatRepository;
     private final CacheVersionRepository cacheVersionRepository;
     private final IgniteCacheService igniteCacheService;
+    private final PoliticsRepository politicsRepository;
 
-    private Map<Integer, String> changedOrNewRulesSql = new LinkedHashMap<>();
-    private Set<Integer> deletedRuleIds = new LinkedHashSet<>();
+    private static final String DB_CACHE_NAME = "politics";
+    private static final List<String> SCANNING_TABLES = 
+            List.of("dqchecks", "dictionary_items", "dataset2control_area", "dataset_exclusion");
+    private static final String SCANNING_SCHEMA = "datafirewall";
 
     @Transactional
     public void refreshCaches() {
         // 1. Читаем всю таблицу
-        List<DqChecks> rows = dqChecksRepository.findAll();
+        List<PgStat> rows = pgStatRepository.findTableStats(SCANNING_TABLES, SCANNING_SCHEMA);
 
-        // 2. Строим Map<Integer, String> id -> hash(sqlQuery)
-        Map<Integer, String> dbHashes = rows.stream()
-                .collect(Collectors.toMap(
-                        DqChecks::getId,
-                        row -> sha256Hex(row.getSqlQuery()),
-                        (a, b) -> b,
-                        LinkedHashMap::new
-                ));
-
-        // Дополнительно держим id -> sqlQuery, чтобы потом отдать на компиляцию
-        Map<Integer, String> dbSqlById = rows.stream()
-                .collect(Collectors.toMap(
-                        DqChecks::getId,
-                        DqChecks::getSqlQuery,
-                        (a, b) -> b,
-                        LinkedHashMap::new
-                ));
-
-        // 3. Получаем/создаем dqchecks_hash
-        ClientCache<Integer, String> hashCache =
-                igniteCacheService.getOrCreateCacheByFullName(Caches.DQCHECKS_HASH_CACHE.getName());
-
-        Map<Integer, String> cacheHashes =
-                igniteCacheService.cacheExistsByFullName(Caches.DQCHECKS_HASH_CACHE.getName())
-                        ? igniteCacheService.readSnapshotByFullName(Caches.DQCHECKS_HASH_CACHE.getName())
+        // 2. Получаем/создаем dqchecks_hash
+        Map<String, Long> statMap =
+                igniteCacheService.cacheExistsByFullName(Caches.PG_STAT.getName())
+                        ? igniteCacheService.readSnapshotByFullName(Caches.PG_STAT.getName())
                         : new LinkedHashMap<>();
 
-        // 4-5. Сравниваем, выделяем:
-        // changedOrNewRulesSql -> новые или изменившиеся SQL
-        // deletedRuleIds -> удалённые id
-        this.changedOrNewRulesSql = new LinkedHashMap<>();
-        this.deletedRuleIds = new LinkedHashSet<>();
+        Map<String, Long> newStatCache = new HashMap<>();
 
-        for (Map.Entry<Integer, String> entry : dbHashes.entrySet()) {
-            Integer id = entry.getKey();
-            String newHash = entry.getValue();
-            String oldHash = cacheHashes.get(id);
+        // 3. Сравниваем
+        boolean isChanged = false;
+        for (PgStat row : rows) {
+            newStatCache.put(row.tableName(), row.totalChanges());
 
-            if (oldHash == null || !oldHash.equals(newHash)) {
-                this.changedOrNewRulesSql.put(id, dbSqlById.get(id));
+            Long cacheChanges = statMap.get(row.tableName());
+            if (!Objects.equals(row.totalChanges(), cacheChanges)) {
+                isChanged = true;
             }
         }
 
-        for (Integer cachedId : cacheHashes.keySet()) {
-            if (!dbHashes.containsKey(cachedId)) {
-                this.deletedRuleIds.add(cachedId);
+        if (statMap.size() != newStatCache.size()) {
+            isChanged = true;
+        }
+
+        // 4. Обновляем кэши, если есть изменения
+        if (isChanged) {
+            // 4.1 Получаем новую версию
+            CacheVersion currentVersionRow =
+                    cacheVersionRepository.findTopByIdCacheNameOrderByIdVersionDesc(DB_CACHE_NAME)
+                            .orElse(null);
+
+            Integer currentVersion = currentVersionRow == null
+                    ? null
+                    : currentVersionRow.getId().getVersion();
+            Integer newVersion = currentVersion == null ? 1 : currentVersion + 1;
+
+            // 4.2 Обновляем кэши
+            try {
+                Map<String, String> dataset2ControlArea = politicsRepository.getDataset2ControlArea();
+                createNewVersion(Caches.POLITICS_DATASET2CONTROL_AREA.getName(), newVersion, dataset2ControlArea);
+                
+                Map<Integer, String> errorMessages = politicsRepository.getErrorMessages();
+                createNewVersion(Caches.POLITICS_ERROR_MESSAGES.getName(), newVersion, errorMessages);
+
+                Map<String, Set<String>> datasetExclusion = politicsRepository.getDatasetExclusion();
+                createNewVersion(Caches.POLITICS_DATASET_EXCLUSION.getName(), newVersion, datasetExclusion);
+
+                Map<String, Map<String, Set<Integer>>> controlAreaRules = politicsRepository.getControlAreaRules();
+                createNewVersion(Caches.POLITICS_CONTROL_AREA_RULES.getName(), newVersion, controlAreaRules);
+
+                ClientCache<String, Long> statCache =
+                        igniteCacheService.getOrCreateCacheByFullName(Caches.PG_STAT.getName());
+                statCache.putAll(newStatCache);
+
+                // 5. Фиксируем новую версию в БД
+                CacheVersion newVersionRow = new CacheVersion(
+                        new CacheVersionId(DB_CACHE_NAME, newVersion)
+                );
+                cacheVersionRepository.save(newVersionRow);
+            } catch (Exception ex) {
+                igniteCacheService.destroyVersionedCache(Caches.POLITICS_DATASET2CONTROL_AREA.getName(), newVersion);
+                igniteCacheService.destroyVersionedCache(Caches.POLITICS_ERROR_MESSAGES.getName(), newVersion);
+                igniteCacheService.destroyVersionedCache(Caches.POLITICS_DATASET_EXCLUSION.getName(), newVersion);
+                igniteCacheService.destroyVersionedCache(Caches.POLITICS_CONTROL_AREA_RULES.getName(), newVersion);
+                throw new RuntimeException("Ошибка при обновлении кэша politics: " + ex);
             }
         }
+    }
 
-        // 6. Полностью обновляем dqchecks_hash снапшотом
-        hashCache.clear();
-        if (!dbHashes.isEmpty()) {
-            hashCache.putAll(dbHashes);
-        }
-
-        RuleCompilerPipeline ruleCompiler = new RuleCompilerPipeline(2);
-
-        Map<Integer, String> normalized = this.changedOrNewRulesSql.entrySet().stream()
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        e -> SqlTextNormalizer.normalize(e.getValue())
-                ));
-
-        // 7. Компилируем только новые/изменённые правила
-        Map<String, byte[]> compiledDelta =
-                normalized.isEmpty()
-                        ? Collections.emptyMap()
-                        : ruleCompiler.process(normalized);
-
-        // 8. Определяем текущую версию compiled_rules из БД
-        CacheVersion currentVersionRow =
-                cacheVersionRepository.findTopByIdCacheNameOrderByIdVersionDesc(Caches.COMPILED_RULES.getName())
-                        .orElse(null);
-
-        Integer currentVersion = currentVersionRow == null
-                ? null
-                : currentVersionRow.getId().getVersion();
-        Integer newVersion = currentVersion == null ? 1 : currentVersion + 1;
-
-        // 9. Собираем новый compiled_rules_<newVersion>
-        ClientCache<String, byte[]> newCompiledCache =
-                igniteCacheService.getOrCreateVersionedCache(Caches.COMPILED_RULES.getName(), newVersion);
+    private <K, V> void createNewVersion(String cacheName, Integer newVersion, Map<K, V> newData) {
+        ClientCache<K, V> newCompiledCache =
+                igniteCacheService.getOrCreateVersionedCache(cacheName, newVersion);
 
         // если версия уже есть — очищаем перед заполнением
         newCompiledCache.clear();
-
-        // если есть старая версия, копируем её целиком
-        if (currentVersion != null
-                && igniteCacheService.cacheExists(Caches.COMPILED_RULES.getName(), currentVersion)) {
-
-            Map<String, byte[]> previousSnapshot =
-                    igniteCacheService.readSnapshot(Caches.COMPILED_RULES.getName(), currentVersion);
-
-            if (!previousSnapshot.isEmpty()) {
-                newCompiledCache.putAll(previousSnapshot);
-            }
-        }
-
-        ruleCompiler.shutdown();
-
-        // накатываем изменения
-        if (!compiledDelta.isEmpty()) {
-            newCompiledCache.putAll(compiledDelta);
-        }
-
-        // удаляем ключи, которых больше нет в БД
-        for (Integer deletedId : this.deletedRuleIds) {
-            newCompiledCache.remove(String.format("Rule%s", deletedId));
-        }
-
-        // 10. Фиксируем новую версию в БД
-        CacheVersion newVersionRow = new CacheVersion(
-                new CacheVersionId(Caches.COMPILED_RULES.getName(), newVersion)
-        );
-        cacheVersionRepository.save(newVersionRow);
-    }
-
-    public Map<Integer, String> getChangedOrNewRulesSql() {
-        return Collections.unmodifiableMap(changedOrNewRulesSql);
-    }
-
-    public Set<Integer> getDeletedRuleIds() {
-        return Collections.unmodifiableSet(deletedRuleIds);
-    }
-
-    private String sha256Hex(String source) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(
-                    source == null ? new byte[0] : source.getBytes(StandardCharsets.UTF_8)
-            );
-
-            StringBuilder sb = new StringBuilder(digest.length * 2);
-            for (byte b : digest) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to calculate SHA-256", e);
-        }
+        newCompiledCache.putAll(newData);
     }
 }

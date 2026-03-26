@@ -2,6 +2,7 @@ package com.gpb.datafirewall.properties;
 
 public enum Caches {
     DQCHECKS_HASH_CACHE("dqchecks_hash"),
+    PG_STAT("pg_stat"),
     COMPILED_RULES("compiled_rules"),
     POLITICS_DATASET2CONTROL_AREA("politics_dataset2control_area"),
     POLITICS_CONTROL_AREA_RULES("politics_control_area_rules"),

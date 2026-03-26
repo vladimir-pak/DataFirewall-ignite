@@ -3,6 +3,7 @@ package com.gpb.datafirewall.service;
 import org.springframework.stereotype.Service;
 
 import com.gpb.datafirewall.service.impl.DqChecksCacheRefreshServiceImpl;
+import com.gpb.datafirewall.service.impl.PoliticsCacheRefreshServiceImpl;
 
 import lombok.RequiredArgsConstructor;
 
@@ -10,9 +11,10 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class CacheRefreshService {
     DqChecksCacheRefreshServiceImpl dqChecksRefreshService;
+    PoliticsCacheRefreshServiceImpl politicsCacheRefreshServiceImpl;
 
     public void refreshCache() {
         dqChecksRefreshService.refreshCaches();
-
+        politicsCacheRefreshServiceImpl.refreshCaches();
     };
 }

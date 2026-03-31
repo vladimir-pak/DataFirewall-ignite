@@ -96,7 +96,7 @@ public class IgniteCacheService {
     }
 
     public int destroyAllVersions(String baseName) {
-        String prefix = normalizeBaseName(baseName) + "_";
+        String prefix = normalizeBaseName(baseName);
         int deleted = 0;
 
         for (String cacheName : igniteClient.cacheNames()) {

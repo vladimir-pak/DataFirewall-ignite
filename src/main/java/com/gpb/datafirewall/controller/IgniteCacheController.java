@@ -57,7 +57,7 @@ public class IgniteCacheController {
      * Метод для обновления всего кэша
      * @return String сообщение
      */
-    @GetMapping("/cache/refresh")
+    @PutMapping("/cache/refresh")
     public ResponseEntity<String> startRefreshCache() {
         cacheRefreshService.refreshCache();
         return ResponseEntity.ok("Кэш обновлен");
@@ -68,7 +68,7 @@ public class IgniteCacheController {
      * @param cacheName
      * @return
      */
-    @DeleteMapping("/cache/delete")
+    @DeleteMapping("/cache/delete/{cacheName}")
     public ResponseEntity<String> deleteCache(@PathVariable String cacheName) {
         igniteCacheService.destroyAllVersions(cacheName);
         return ResponseEntity.ok("Кэш обновлен");

@@ -10,8 +10,8 @@ import lombok.RequiredArgsConstructor;
 @Service
 @RequiredArgsConstructor
 public class CacheRefreshService {
-    DqChecksCacheRefreshServiceImpl dqChecksRefreshService;
-    PoliticsCacheRefreshServiceImpl politicsCacheRefreshServiceImpl;
+    private final DqChecksCacheRefreshServiceImpl dqChecksRefreshService;
+    private final PoliticsCacheRefreshServiceImpl politicsCacheRefreshServiceImpl;
 
     public void refreshCache() {
         dqChecksRefreshService.refreshCaches();

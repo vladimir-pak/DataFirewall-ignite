@@ -4,8 +4,8 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.gpb.datafirewall.compile.CompiledRulesContainer;
 import com.gpb.datafirewall.model.Rule;
+import com.gpb.datafirewall.utils.CompiledRulesContainer;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

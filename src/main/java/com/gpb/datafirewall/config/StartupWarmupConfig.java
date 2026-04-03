@@ -4,7 +4,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import com.gpb.datafirewall.service.SqlParserService;
+import com.gpb.datafirewall.service.CacheRefreshService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,14 +14,13 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class StartupWarmupConfig {
 
-    private final SqlParserService sqlParserService;
+    private final CacheRefreshService cacheRefreshService;
 
     @Bean
     public ApplicationRunner warmupCompiledRules() {
         return args -> {
-            String sourceName = "УСЛиК";
-            log.info("Warmup: parseAll({})", sourceName);
-            sqlParserService.parseAll(sourceName);
+            log.info("Warmup: preparing cache...");
+            cacheRefreshService.refreshCache();
             log.info("Warmup done");
         };
     }

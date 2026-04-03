@@ -37,8 +37,6 @@ public class IgniteApplciation {
 	private final LogRepository logRepository;
 	private final ConfigurableEnvironment configurableEnvironment;
 
-	private final FlinkClassLoaderService flinkClassLoaderService;
-
 	private static ConfigurableApplicationContext applicationContext;
 
 	@PostConstruct
@@ -53,12 +51,6 @@ public class IgniteApplciation {
 		);
 
 		checkConfigChanges();
-
-		try {
-			flinkClassLoaderService.updateRules("УСЛиК");
-		} catch (Exception e) {
-			log.error("Failed to update rules on startup for sourceName=УСЛиК", e);
-		}
 	}
 
 	private void checkConfigChanges() {

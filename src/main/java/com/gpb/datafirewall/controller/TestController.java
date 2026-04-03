@@ -3,7 +3,6 @@ package com.gpb.datafirewall.controller;
 import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,15 +20,15 @@ public class TestController {
     private final TestService testService;
     private final FlinkClassLoaderService flinkClassLoaderService;
 
-    @PostMapping("/start")
+    @PostMapping("/check")
     public ResponseEntity<String> start(@RequestBody Map<String, String> testData) {
         testService.test(testData);
         return ResponseEntity.ok("Test finished");
     }
 
-    @PostMapping("/compile/{serviceName}")
-    public ResponseEntity<String> compile(@PathVariable String serviceName) {
-        flinkClassLoaderService.updateRules(serviceName);
+    @PostMapping("/load-classes")
+    public ResponseEntity<String> compile() {
+        flinkClassLoaderService.updateRules();
         return ResponseEntity.ok("Compiled");
     }
 }

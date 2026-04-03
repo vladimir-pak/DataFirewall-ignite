@@ -102,6 +102,14 @@ public class PoliticsCacheRefreshServiceImpl {
                 igniteCacheService.destroyVersionedCache(Caches.POLITICS_CONTROL_AREA_RULES.getName(), newVersion);
                 throw new RuntimeException("Ошибка при обновлении кэша politics: " + ex);
             }
+
+            // 6. Удаляем старые кэши, за исключением нового и предыдущего
+            if (currentVersion != null) {
+                destroyOldCaches(Caches.POLITICS_DATASET2CONTROL_AREA.getName(), currentVersion, newVersion);
+                destroyOldCaches(Caches.POLITICS_ERROR_MESSAGES.getName(), currentVersion, newVersion);
+                destroyOldCaches(Caches.POLITICS_DATASET_EXCLUSION.getName(), currentVersion, newVersion);
+                destroyOldCaches(Caches.POLITICS_CONTROL_AREA_RULES.getName(), currentVersion, newVersion);
+            }
         }
     }
 
@@ -112,5 +120,26 @@ public class PoliticsCacheRefreshServiceImpl {
         // если версия уже есть — очищаем перед заполнением
         newCompiledCache.clear();
         newCompiledCache.putAll(newData);
+    }
+
+    private void destroyOldCaches(String cacheName, int currentVersion, int newVersion) {
+        String currentFullCacheName = String.format("%s_%s", cacheName, currentVersion);
+        String newFullCacheName = String.format("%s_%s", cacheName, newVersion);
+        String prefix = cacheName + "_";
+
+        for (String existingCacheName : igniteCacheService.getCacheNames()) {
+            if (!existingCacheName.startsWith(prefix)) {
+                continue;
+            }
+
+            String suffix = existingCacheName.substring(prefix.length());
+            if (!suffix.matches("\\d+")) {
+                continue;
+            }
+
+            if (!existingCacheName.equals(currentFullCacheName) && !existingCacheName.equals(newFullCacheName)) {
+                igniteCacheService.destroyCacheByFullName(existingCacheName);
+            }
+        }
     }
 }

@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import lombok.RequiredArgsConstructor;
 
 import javax.cache.Cache;
+
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -107,6 +109,10 @@ public class IgniteCacheService {
         }
 
         return deleted;
+    }
+
+    public Collection<String> getCacheNames() {
+        return igniteClient.cacheNames();
     }
 
     public boolean cacheExistsByFullName(String fullCacheName) {

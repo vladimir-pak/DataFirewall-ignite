@@ -152,6 +152,32 @@ public class DqChecksCacheRefreshServiceImpl {
                 new CacheVersionId(Caches.COMPILED_RULES.getName(), newVersion)
         );
         cacheVersionRepository.save(newVersionRow);
+
+        // 11. Удаляем старые кэши, за исключением нового и предыдущего
+        if (currentVersion != null) {
+            destroyOldCaches(currentVersion, newVersion);
+        }
+    }
+
+    private void destroyOldCaches(int currentVersion, int newVersion) {
+        String currentFullCacheName = String.format("%s_%s", Caches.COMPILED_RULES.getName(), currentVersion);
+        String newFullCacheName = String.format("%s_%s", Caches.COMPILED_RULES.getName(), newVersion);
+        String prefix = Caches.COMPILED_RULES.getName() + "_";
+
+        for (String cacheName : igniteCacheService.getCacheNames()) {
+            if (!cacheName.startsWith(prefix)) {
+                continue;
+            }
+
+            String suffix = cacheName.substring(prefix.length());
+            if (!suffix.matches("\\d+")) {
+                continue;
+            }
+
+            if (!cacheName.equals(currentFullCacheName) && !cacheName.equals(newFullCacheName)) {
+                igniteCacheService.destroyCacheByFullName(cacheName);
+            }
+        }
     }
 
     public Map<Integer, String> getChangedOrNewRulesSql() {

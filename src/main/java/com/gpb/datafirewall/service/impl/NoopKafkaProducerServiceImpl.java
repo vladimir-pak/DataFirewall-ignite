@@ -5,6 +5,9 @@ import org.springframework.stereotype.Service;
 
 import com.gpb.datafirewall.service.KafkaProducerService;
 
+/**
+ * Класс - заглушка при выключенном использовании Kafka
+ */
 @Service
 @ConditionalOnProperty(
         prefix = "app.kafka.cache-update",

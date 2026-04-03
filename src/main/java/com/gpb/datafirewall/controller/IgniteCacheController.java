@@ -1,5 +1,6 @@
 package com.gpb.datafirewall.controller;
 import com.gpb.datafirewall.dto.CacheResponseDto;
+import com.gpb.datafirewall.dto.RefreshResult;
 import com.gpb.datafirewall.model.CacheVersion;
 import com.gpb.datafirewall.repository.CacheVersionRepository;
 import com.gpb.datafirewall.service.CacheRefreshService;
@@ -54,14 +55,56 @@ public class IgniteCacheController {
     }
 
     /**
-     * Метод для обновления всего кэша
-     * @return String сообщение
+     * Метод для обновления всего кэша вручную.
+     * @return 200 - если отработан. 409 - если уже работает обновление. 408 - timeout. 500 - ошибка обновления
      */
     @PutMapping("/cache/refresh")
-    public ResponseEntity<String> startRefreshCache() {
-        cacheRefreshService.refreshCache();
-        return ResponseEntity.ok("Кэш обновлен");
-    } 
+    public ResponseEntity<RefreshResult> refreshNow() {
+        RefreshResult result = cacheRefreshService.refreshCacheNow();
+
+        if (result.alreadyRunning()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(result);
+        }
+
+        if (result.timeout()) {
+            return ResponseEntity.status(HttpStatus.REQUEST_TIMEOUT).body(result);
+        }
+
+        if (!result.success()) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Метод для проверки расписания. true - включено, false - выключено.
+     * @return boolean
+     */
+    @GetMapping("/cache/scheduled/status")
+    public ResponseEntity<Boolean> isScheduledRefreshEnabled() {
+        return ResponseEntity.ok(cacheRefreshService.isScheduledRefreshEnabled());
+    }
+
+    /**
+     * Метод для включения обновления по расписанию
+     * @return String
+     */
+    @PutMapping("/cache/scheduled/enable")
+    public ResponseEntity<String> enableScheduler() {
+        cacheRefreshService.enableScheduledRefresh();
+        return ResponseEntity.ok("Обновление по расписанию включено");
+    }
+
+    /**
+     * Метод для выключения обновления по расписанию
+     * @return String
+     */
+    @PutMapping("/cache/scheduled/disable")
+    public ResponseEntity<String> disableScheduler() {
+        cacheRefreshService.disableScheduledRefresh();
+        return ResponseEntity.ok("Обновление по расписанию выключено");
+    }
 
     /**
      * Метод для удаления кэша всех версий

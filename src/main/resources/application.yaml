@@ -104,6 +104,11 @@ datafirewall:
     enabled: true
     output-dir: ./generated-rules
 
+sync:
+  enabled: true
+  interval: 60000
+  timeout-ms: 300000
+
 management:
   endpoints:
     web:

@@ -88,12 +88,6 @@ public class DqChecksCacheRefreshServiceImpl {
             }
         }
 
-        // 6. Полностью обновляем dqchecks_hash снапшотом
-        hashCache.clear();
-        if (!dbHashes.isEmpty()) {
-            hashCache.putAll(dbHashes);
-        }
-
         RuleCompilerPipeline ruleCompiler = new RuleCompilerPipeline(2);
 
         Map<Integer, String> normalized = this.changedOrNewRulesSql.entrySet().stream()
@@ -102,13 +96,13 @@ public class DqChecksCacheRefreshServiceImpl {
                         e -> SqlTextNormalizer.normalize(e.getValue())
                 ));
 
-        // 7. Компилируем только новые/изменённые правила
+        // 6. Компилируем только новые/изменённые правила
         Map<String, byte[]> compiledDelta =
                 normalized.isEmpty()
                         ? Collections.emptyMap()
                         : ruleCompiler.process(normalized);
 
-        // 8. Определяем текущую версию compiled_rules из БД
+        // 7. Определяем текущую версию compiled_rules из БД
         CacheVersion currentVersionRow =
                 cacheVersionRepository.findTopByIdCacheNameOrderByIdVersionDesc(Caches.COMPILED_RULES.getName())
                         .orElse(null);
@@ -118,7 +112,7 @@ public class DqChecksCacheRefreshServiceImpl {
                 : currentVersionRow.getId().getVersion();
         Integer newVersion = currentVersion == null ? 1 : currentVersion + 1;
 
-        // 9. Собираем новый compiled_rules_<newVersion>
+        // 8. Собираем новый compiled_rules_<newVersion>
         ClientCache<String, byte[]> newCompiledCache =
                 igniteCacheService.getOrCreateVersionedCache(Caches.COMPILED_RULES.getName(), newVersion);
 
@@ -149,11 +143,17 @@ public class DqChecksCacheRefreshServiceImpl {
             newCompiledCache.remove(String.format("Rule%s", deletedId));
         }
 
-        // 10. Фиксируем новую версию в БД
+        // 9. Фиксируем новую версию в БД
         CacheVersion newVersionRow = new CacheVersion(
                 new CacheVersionId(Caches.COMPILED_RULES.getName(), newVersion)
         );
         cacheVersionRepository.save(newVersionRow);
+
+        // 10. Полностью обновляем dqchecks_hash снапшотом
+        hashCache.clear();
+        if (!dbHashes.isEmpty()) {
+            hashCache.putAll(dbHashes);
+        }
 
         // 11. Удаляем старые кэши, за исключением нового и предыдущего
         if (currentVersion != null) {

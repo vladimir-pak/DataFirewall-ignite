@@ -14,10 +14,12 @@ import com.gpb.datafirewall.repository.PgStatRepository;
 import com.gpb.datafirewall.repository.PoliticsRepository;
 
 import org.apache.ignite.client.ClientCache;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +35,12 @@ public class PoliticsCacheRefreshServiceImpl {
     private static final List<String> SCANNING_TABLES = 
             List.of("dqchecks", "dictionary_items", "dataset2control_area", "dataset_exclusion");
     private static final String SCANNING_SCHEMA = "datafirewall";
+
+    @Async
+    public CompletableFuture<Void> refreshCachesAsync() {
+        refreshCaches();
+        return CompletableFuture.completedFuture(null);
+    }
 
     @Transactional
     public void refreshCaches() {

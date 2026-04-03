@@ -60,3 +60,11 @@ java \
 ### Kafka Producer
 В application.yaml указать реквизиты для подключения к Kafka с TLS.
 Для отладки можно выклчить Kafka в параметре spring.kafka.cache-update.enabled
+
+### Actuator
+Для healthcheck использовать endpoint-ы
+```bash
+  /actuator/health
+  /actuator/health/liveness
+  /actuator/health/readiness
+  ```

@@ -104,6 +104,17 @@ datafirewall:
     enabled: true
     output-dir: ./generated-rules
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+
 logging:
   cef:
     path: logs

@@ -55,3 +55,8 @@ java \
 - **/api/v1/test/start** - запуск проверок. В теле запроса подается json с данными для проверки.
 
 - **/api/v1/cache/refresh** - запуск обновления всего кэша.
+
+
+### Kafka Producer
+В application.yaml указать реквизиты для подключения к Kafka с TLS.
+Для отладки можно выклчить Kafka в параметре spring.kafka.cache-update.enabled

@@ -1,6 +1,7 @@
 package com.gpb.datafirewall.service.impl;
 
 import com.gpb.datafirewall.service.IgniteCacheService;
+import com.gpb.datafirewall.service.KafkaProducerService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -26,6 +27,7 @@ public class PoliticsCacheRefreshServiceImpl {
     private final CacheVersionRepository cacheVersionRepository;
     private final IgniteCacheService igniteCacheService;
     private final PoliticsRepository politicsRepository;
+    private final KafkaProducerService kafkaProducerService;
 
     private static final String DB_CACHE_NAME = "politics";
     private static final List<String> SCANNING_TABLES = 
@@ -110,6 +112,12 @@ public class PoliticsCacheRefreshServiceImpl {
                 destroyOldCaches(Caches.POLITICS_DATASET_EXCLUSION.getName(), currentVersion, newVersion);
                 destroyOldCaches(Caches.POLITICS_CONTROL_AREA_RULES.getName(), currentVersion, newVersion);
             }
+
+            // 7. Отправляем событие об обновлении в Kafka
+            kafkaProducerService.send(
+                    Caches.COMPILED_RULES.getName(),
+                    newVersion
+            );
         }
     }
 

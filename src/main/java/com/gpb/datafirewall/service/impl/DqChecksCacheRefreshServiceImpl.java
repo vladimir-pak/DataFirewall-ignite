@@ -1,6 +1,7 @@
 package com.gpb.datafirewall.service.impl;
 
 import com.gpb.datafirewall.service.IgniteCacheService;
+import com.gpb.datafirewall.service.KafkaProducerService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -28,6 +29,7 @@ public class DqChecksCacheRefreshServiceImpl {
     private final DqChecksRepository dqChecksRepository;
     private final CacheVersionRepository cacheVersionRepository;
     private final IgniteCacheService igniteCacheService;
+    private final KafkaProducerService kafkaProducerService;
 
     private Map<Integer, String> changedOrNewRulesSql = new LinkedHashMap<>();
     private Set<Integer> deletedRuleIds = new LinkedHashSet<>();
@@ -157,6 +159,12 @@ public class DqChecksCacheRefreshServiceImpl {
         if (currentVersion != null) {
             destroyOldCaches(currentVersion, newVersion);
         }
+
+        // 12. Отправляем событие об обновлении в Kafka
+        kafkaProducerService.send(
+                Caches.COMPILED_RULES.getName(),
+                newVersion
+        );
     }
 
     private void destroyOldCaches(int currentVersion, int newVersion) {

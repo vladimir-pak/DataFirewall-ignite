@@ -136,6 +136,12 @@
 			<version>1.4.197</version>
 		</dependency>
 
+		<!-- Kafka -->
+		<dependency>
+			<groupId>org.springframework.kafka</groupId>
+			<artifactId>spring-kafka</artifactId>
+		</dependency>
+
 		<!-- Для компилятора -->
 		<dependency>
 			<groupId>org.ow2.asm</groupId>

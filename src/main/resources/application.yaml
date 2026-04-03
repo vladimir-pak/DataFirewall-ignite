@@ -36,6 +36,24 @@ spring:
     properties:
       hibernate:
         default_schema: datafirewall
+  
+  kafka:
+    cache-update:
+        enabled: true # toggle kafka service
+    topics:
+      cache-update: cache.update.topic
+
+    bootstrap-servers: your-kafka:9093
+
+    properties:
+      security.protocol: SSL
+
+      ssl.truststore.location: /opt/certs/truststore.jks
+      ssl.truststore.password: changeit
+
+      ssl.keystore.location: /opt/certs/keystore.jks
+      ssl.keystore.password: changeit
+      ssl.key.password: changeit
 
   flyway:
     schemas: datafirewall

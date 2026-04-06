@@ -142,3 +142,4 @@ logging:
     rollingpolicy:
       max-file-size: 50MB
       max-history: 7
+

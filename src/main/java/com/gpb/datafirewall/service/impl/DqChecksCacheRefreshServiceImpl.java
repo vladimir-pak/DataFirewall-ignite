@@ -4,6 +4,7 @@ import com.gpb.datafirewall.service.IgniteCacheService;
 import com.gpb.datafirewall.service.KafkaProducerService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import com.gpb.datafirewall.compile.RuleCompilerPipeline;
 import com.gpb.datafirewall.model.CacheVersion;
@@ -24,6 +25,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class DqChecksCacheRefreshServiceImpl {
 
     private final DqChecksRepository dqChecksRepository;
@@ -81,12 +83,14 @@ public class DqChecksCacheRefreshServiceImpl {
                 this.changedOrNewRulesSql.put(id, dbSqlById.get(id));
             }
         }
+        log.info("Найдено {} измененных или новых проверок", this.changedOrNewRulesSql.size());
 
         for (Integer cachedId : cacheHashes.keySet()) {
             if (!dbHashes.containsKey(cachedId)) {
                 this.deletedRuleIds.add(cachedId);
             }
         }
+        log.info("Найдено {} удаленных проверок", this.deletedRuleIds.size());
 
         RuleCompilerPipeline ruleCompiler = new RuleCompilerPipeline(2);
 

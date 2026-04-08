@@ -67,6 +67,31 @@ public class PoliticsRepository {
         });
     }
 
+    public Map<String, Boolean> getFilterFlags() {
+        String sql = """
+            select ca.code as control_area, coalesce(ff.value, 'N') as filter_flag
+            from datafirewall.dictionary_items ca
+            left join datafirewall.dictionary_items ff 
+                on ff.dictionary_uuid = '9be1b8d7-1c66-4b92-8072-fcabc2b07d5d' 
+                and ff.code = ca.code
+                and ff.is_active = true
+            where ca.dictionary_uuid = '2336658d-9360-47b5-b6da-17f0be5f4574';
+        """;
+
+        return jdbcTemplate.query(sql, rs -> {
+            Map<String, Boolean> result = new HashMap<>();
+
+            while (rs.next()) {
+                result.put(
+                    rs.getString("control_area"),
+                    rs.getString("filter_flag").equals("Y")
+                );
+            }
+
+            return result;
+        });
+    }
+
     public Map<String, Set<String>> getDatasetExclusion() {
         String sql = """
             SELECT control_area, jsonb_agg(dataset_code order by dataset_code) as dataset_codes
@@ -139,9 +164,6 @@ public class PoliticsRepository {
                     , d.control_obj
                     , ch.checked_attr
             ) t
-            left join datafirewall.dictionary_items ff 
-                on ff.dictionary_uuid = '9be1b8d7-1c66-4b92-8072-fcabc2b07d5d' 
-                and ff.code = t.control_area
             group by t.control_area
                 , case when ff.value = 'Y' then true else false end;
         """;

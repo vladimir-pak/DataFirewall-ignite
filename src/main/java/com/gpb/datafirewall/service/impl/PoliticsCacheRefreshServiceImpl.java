@@ -88,6 +88,9 @@ public class PoliticsCacheRefreshServiceImpl {
                 Map<String, Map<String, Set<Integer>>> controlAreaRules = politicsRepository.getControlAreaRules();
                 createNewVersion(Caches.POLITICS_CONTROL_AREA_RULES.getName(), newVersion, controlAreaRules);
 
+                Map<String, Boolean> controlAreaFilterFlag = politicsRepository.getFilterFlags();
+                createNewVersion(Caches.POLITICS_FILTER_FLAG.getName(), newVersion, controlAreaFilterFlag);
+
                 ClientCache<String, Long> statCache =
                         igniteCacheService.getOrCreateCacheByFullName(Caches.PG_STAT.getName());
                 statCache.putAll(newStatCache);
@@ -102,6 +105,7 @@ public class PoliticsCacheRefreshServiceImpl {
                 igniteCacheService.destroyVersionedCache(Caches.POLITICS_ERROR_MESSAGES.getName(), newVersion);
                 igniteCacheService.destroyVersionedCache(Caches.POLITICS_DATASET_EXCLUSION.getName(), newVersion);
                 igniteCacheService.destroyVersionedCache(Caches.POLITICS_CONTROL_AREA_RULES.getName(), newVersion);
+                igniteCacheService.destroyVersionedCache(Caches.POLITICS_FILTER_FLAG.getName(), newVersion);
                 throw new RuntimeException("Ошибка при обновлении кэша politics: " + ex);
             }
 

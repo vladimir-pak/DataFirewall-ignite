@@ -7,7 +7,8 @@ public enum Caches {
     POLITICS_DATASET2CONTROL_AREA("politics_dataset2control_area"),
     POLITICS_CONTROL_AREA_RULES("politics_control_area_rules"),
     POLITICS_ERROR_MESSAGES("politics_error_messages"),
-    POLITICS_DATASET_EXCLUSION("politics_dataset_exclusion");
+    POLITICS_DATASET_EXCLUSION("politics_dataset_exclusion"),
+    POLITICS_FILTER_FLAG("politics_filter_flag");
 
     private final String name;
 

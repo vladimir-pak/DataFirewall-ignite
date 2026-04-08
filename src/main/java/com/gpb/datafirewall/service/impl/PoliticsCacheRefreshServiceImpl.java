@@ -79,13 +79,13 @@ public class PoliticsCacheRefreshServiceImpl {
                 Map<String, String> dataset2ControlArea = politicsRepository.getDataset2ControlArea();
                 createNewVersion(Caches.POLITICS_DATASET2CONTROL_AREA.getName(), newVersion, dataset2ControlArea);
                 
-                Map<Integer, String> errorMessages = politicsRepository.getErrorMessages();
+                Map<String, String> errorMessages = politicsRepository.getErrorMessages();
                 createNewVersion(Caches.POLITICS_ERROR_MESSAGES.getName(), newVersion, errorMessages);
 
                 Map<String, Set<String>> datasetExclusion = politicsRepository.getDatasetExclusion();
                 createNewVersion(Caches.POLITICS_DATASET_EXCLUSION.getName(), newVersion, datasetExclusion);
 
-                Map<String, Map<String, Set<Integer>>> controlAreaRules = politicsRepository.getControlAreaRules();
+                Map<String, Map<String, Set<String>>> controlAreaRules = politicsRepository.getControlAreaRules();
                 createNewVersion(Caches.POLITICS_CONTROL_AREA_RULES.getName(), newVersion, controlAreaRules);
 
                 Map<String, Boolean> controlAreaFilterFlag = politicsRepository.getFilterFlags();

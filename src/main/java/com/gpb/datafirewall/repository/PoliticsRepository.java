@@ -47,18 +47,19 @@ public class PoliticsRepository {
         });
     }
 
-    public Map<Integer, String> getErrorMessages() {
+    public Map<String, String> getErrorMessages() {
         String sql = """
-            SELECT id, error_descr
-            FROM datafirewall.dqchecks;
+            SELECT 'Rule' || id::varchar as id, error_descr
+            FROM datafirewall.dqchecks
+            WHERE status = 'enabled';
         """;
 
         return jdbcTemplate.query(sql, rs -> {
-            Map<Integer, String> result = new HashMap<>();
+            Map<String, String> result = new HashMap<>();
 
             while (rs.next()) {
                 result.put(
-                    rs.getInt("id"),
+                    rs.getString("id"),
                     rs.getString("error_descr")
                 );
             }
@@ -127,7 +128,7 @@ public class PoliticsRepository {
         });
     }
 
-    public Map<String, Map<String, Set<Integer>>> getControlAreaRules() {
+    public Map<String, Map<String, Set<String>>> getControlAreaRules() {
         String sql = """
             with fulldata as (
                 select dsc.code as dataset_code
@@ -154,7 +155,7 @@ public class PoliticsRepository {
                 select  d.control_area
                     , d.control_obj
                     , ch.checked_attr 
-                    , jsonb_agg(ch.id order by ch.id) as ids
+                    , jsonb_agg('Rule' || ch.id::varchar order by ch.id) as ids
                 from fulldata d
                 join datafirewall.dqchecks ch
                     on ch.uuid = d.check_uuid
@@ -169,19 +170,19 @@ public class PoliticsRepository {
         """;
 
         return jdbcTemplate.query(sql, rs -> {
-            Map<String, Map<String, Set<Integer>>> result = new HashMap<>();
+            Map<String, Map<String, Set<String>>> result = new HashMap<>();
 
             while (rs.next()) {
                 String controlArea = rs.getString("control_area");
                 String controlsJson = rs.getString("controls");
 
                 try {
-                    Map<String, List<Integer>> temp = objectMapper.readValue(
+                    Map<String, List<String>> temp = objectMapper.readValue(
                         controlsJson,
-                        new TypeReference<Map<String, List<Integer>>>() {}
+                        new TypeReference<Map<String, List<String>>>() {}
                     );
 
-                    Map<String, Set<Integer>> controls = temp.entrySet().stream()
+                    Map<String, Set<String>> controls = temp.entrySet().stream()
                         .collect(Collectors.toMap(
                             Map.Entry::getKey,
                             e -> new LinkedHashSet<>(e.getValue())

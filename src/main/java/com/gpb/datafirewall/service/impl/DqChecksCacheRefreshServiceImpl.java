@@ -92,6 +92,10 @@ public class DqChecksCacheRefreshServiceImpl {
         }
         log.info("Найдено {} удаленных проверок", this.deletedRuleIds.size());
 
+        if (this.changedOrNewRulesSql.size() == 0 && this.deletedRuleIds.size() == 0) {
+            return;
+        }
+
         RuleCompilerPipeline ruleCompiler = new RuleCompilerPipeline(2);
 
         Map<Integer, String> normalized = this.changedOrNewRulesSql.entrySet().stream()

@@ -4,6 +4,7 @@ import com.gpb.datafirewall.service.IgniteCacheService;
 import com.gpb.datafirewall.service.KafkaProducerService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import com.gpb.datafirewall.model.CacheVersion;
 import com.gpb.datafirewall.model.CacheVersionId;
@@ -21,6 +22,7 @@ import java.util.*;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PoliticsCacheRefreshServiceImpl {
 
     private final PgStatRepository pgStatRepository;
@@ -101,11 +103,20 @@ public class PoliticsCacheRefreshServiceImpl {
                 );
                 cacheVersionRepository.save(newVersionRow);
             } catch (Exception ex) {
-                igniteCacheService.destroyVersionedCache(Caches.POLITICS_DATASET2CONTROL_AREA.getName(), newVersion);
-                igniteCacheService.destroyVersionedCache(Caches.POLITICS_ERROR_MESSAGES.getName(), newVersion);
-                igniteCacheService.destroyVersionedCache(Caches.POLITICS_DATASET_EXCLUSION.getName(), newVersion);
-                igniteCacheService.destroyVersionedCache(Caches.POLITICS_CONTROL_AREA_RULES.getName(), newVersion);
-                igniteCacheService.destroyVersionedCache(Caches.POLITICS_FILTER_FLAG.getName(), newVersion);
+                List<String> politics = List.of(
+                        Caches.POLITICS_DATASET2CONTROL_AREA.getName(),
+                        Caches.POLITICS_ERROR_MESSAGES.getName(),
+                        Caches.POLITICS_DATASET_EXCLUSION.getName(),
+                        Caches.POLITICS_CONTROL_AREA_RULES.getName(),
+                        Caches.POLITICS_FILTER_FLAG.getName()
+                    );
+                for (String cacheName : politics) {
+                    try {
+                        igniteCacheService.destroyVersionedCache(cacheName, newVersion);
+                    } catch (Exception exc) {
+                        log.error("Прерывание обновления кэша politics. Ошибка при удалении кэша {}", cacheName);
+                    }
+                }
                 throw new RuntimeException("Ошибка при обновлении кэша politics: " + ex);
             }
 

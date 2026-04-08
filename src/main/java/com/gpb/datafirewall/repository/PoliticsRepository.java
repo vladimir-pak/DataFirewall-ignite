@@ -165,8 +165,7 @@ public class PoliticsRepository {
                     , d.control_obj
                     , ch.checked_attr
             ) t
-            group by t.control_area
-                , case when ff.value = 'Y' then true else false end;
+            group by t.control_area;
         """;
 
         return jdbcTemplate.query(sql, rs -> {

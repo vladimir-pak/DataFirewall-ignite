@@ -114,7 +114,7 @@ public class IgniteCacheController {
     @DeleteMapping("/cache/delete/{cacheName}")
     public ResponseEntity<String> deleteCache(@PathVariable String cacheName) {
         igniteCacheService.destroyAllVersions(cacheName);
-        return ResponseEntity.ok("Кэш обновлен");
+        return ResponseEntity.ok(String.format("Кэш %s удален", cacheName));
     }
 
     

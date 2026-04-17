@@ -10,7 +10,7 @@ import com.gpb.datafirewall.service.KafkaProducerService;
  */
 @Service
 @ConditionalOnProperty(
-        prefix = "app.kafka.cache-update",
+        prefix = "spring.kafka.cache-update",
         name = "enabled",
         havingValue = "false",
         matchIfMissing = true

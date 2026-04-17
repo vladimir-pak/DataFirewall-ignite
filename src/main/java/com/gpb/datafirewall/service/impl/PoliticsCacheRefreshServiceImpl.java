@@ -130,7 +130,7 @@ public class PoliticsCacheRefreshServiceImpl {
 
             // 7. Отправляем событие об обновлении в Kafka
             kafkaProducerService.send(
-                    Caches.COMPILED_RULES.getName(),
+                    DB_CACHE_NAME,
                     newVersion
             );
         }

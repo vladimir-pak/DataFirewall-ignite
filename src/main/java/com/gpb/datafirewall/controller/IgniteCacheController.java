@@ -43,10 +43,11 @@ public class IgniteCacheController {
      * @param cacheName - наименование кэша без версии
      * @return JSON с кэшем последней версии
      */
-    @GetMapping("/cache/latest/{cacheName}")
+    @GetMapping("/cache/{cacheName}/latest")
     public CacheResponseDto<String, Object> getActualCache(@PathVariable String cacheName) {
+        String dbCacheName = cacheName.startsWith("politics") ? "politics" : cacheName;
         CacheVersion currentVersionRow =
-                cacheVersionRepository.findTopByIdCacheNameOrderByIdVersionDesc(cacheName)
+                cacheVersionRepository.findTopByIdCacheNameOrderByIdVersionDesc(dbCacheName)
                         .orElse(null);
 
         String fullCacheName = String.format("%s_%s", cacheName, currentVersionRow.getId().getVersion());

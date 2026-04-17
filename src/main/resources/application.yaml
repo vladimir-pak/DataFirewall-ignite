@@ -36,6 +36,24 @@ spring:
     properties:
       hibernate:
         default_schema: datafirewall
+  
+  kafka:
+    cache-update:
+        enabled: true # toggle kafka service
+    topics:
+      cache-update: cache.update.topic
+
+    bootstrap-servers: your-kafka:9093
+
+    properties:
+      security.protocol: SSL
+
+      ssl.truststore.location: /opt/certs/truststore.jks
+      ssl.truststore.password: changeit
+
+      ssl.keystore.location: /opt/certs/keystore.jks
+      ssl.keystore.password: changeit
+      ssl.key.password: changeit
 
   flyway:
     schemas: datafirewall
@@ -86,6 +104,22 @@ datafirewall:
     enabled: true
     output-dir: ./generated-rules
 
+sync:
+  enabled: true
+  interval: 60000
+  timeout-ms: 300000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+
 logging:
   cef:
     path: logs
@@ -108,3 +142,4 @@ logging:
     rollingpolicy:
       max-file-size: 50MB
       max-history: 7
+

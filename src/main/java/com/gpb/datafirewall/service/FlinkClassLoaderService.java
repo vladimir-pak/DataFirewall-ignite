@@ -30,14 +30,11 @@ import lombok.extern.slf4j.Slf4j;
 public class FlinkClassLoaderService {
 
     private final IgniteCacheService igniteService;
-    private final CacheRefreshService cacheRefreshService;
     private final CompiledRulesContainer compiledRules;
     private final CacheVersionRepository cacheVersionRepository;
 
     public void updateRules() {
-        log.info("Starting refresh cache...");
-        cacheRefreshService.refreshCache();
-
+        log.info("Запуск получения экземпляров классов проверок...");
         reloadAllRulesFromCache();
     }
 

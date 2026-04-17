@@ -17,7 +17,6 @@ import com.gpb.datafirewall.cef.enums.SvoiSeverityEnum;
 import com.gpb.datafirewall.cef.model.Log;
 import com.gpb.datafirewall.cef.repository.LogPartitionRepository;
 import com.gpb.datafirewall.cef.repository.LogRepository;
-import com.gpb.datafirewall.service.FlinkClassLoaderService;
 import com.gpb.datafirewall.utils.Utils;
 
 import jakarta.annotation.PostConstruct;

@@ -1,8 +1,10 @@
 package com.gpb.datafirewall.service.impl;
 
 import com.gpb.datafirewall.service.IgniteCacheService;
+import com.gpb.datafirewall.service.KafkaProducerService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import com.gpb.datafirewall.model.CacheVersion;
 import com.gpb.datafirewall.model.CacheVersionId;
@@ -20,17 +22,19 @@ import java.util.*;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PoliticsCacheRefreshServiceImpl {
 
     private final PgStatRepository pgStatRepository;
     private final CacheVersionRepository cacheVersionRepository;
     private final IgniteCacheService igniteCacheService;
     private final PoliticsRepository politicsRepository;
+    private final KafkaProducerService kafkaProducerService;
 
     private static final String DB_CACHE_NAME = "politics";
     private static final List<String> SCANNING_TABLES = 
             List.of("dqchecks", "dictionary_items", "dataset2control_area", "dataset_exclusion");
-    private static final String SCANNING_SCHEMA = "datafirewall";
+    private static final String SCANNING_SCHEMA = "datafirewall";   
 
     @Transactional
     public void refreshCaches() {
@@ -77,14 +81,17 @@ public class PoliticsCacheRefreshServiceImpl {
                 Map<String, String> dataset2ControlArea = politicsRepository.getDataset2ControlArea();
                 createNewVersion(Caches.POLITICS_DATASET2CONTROL_AREA.getName(), newVersion, dataset2ControlArea);
                 
-                Map<Integer, String> errorMessages = politicsRepository.getErrorMessages();
+                Map<String, String> errorMessages = politicsRepository.getErrorMessages();
                 createNewVersion(Caches.POLITICS_ERROR_MESSAGES.getName(), newVersion, errorMessages);
 
                 Map<String, Set<String>> datasetExclusion = politicsRepository.getDatasetExclusion();
                 createNewVersion(Caches.POLITICS_DATASET_EXCLUSION.getName(), newVersion, datasetExclusion);
 
-                Map<String, Map<String, Set<Integer>>> controlAreaRules = politicsRepository.getControlAreaRules();
+                Map<String, Map<String, Set<String>>> controlAreaRules = politicsRepository.getControlAreaRules();
                 createNewVersion(Caches.POLITICS_CONTROL_AREA_RULES.getName(), newVersion, controlAreaRules);
+
+                Map<String, Boolean> controlAreaFilterFlag = politicsRepository.getFilterFlags();
+                createNewVersion(Caches.POLITICS_FILTER_FLAG.getName(), newVersion, controlAreaFilterFlag);
 
                 ClientCache<String, Long> statCache =
                         igniteCacheService.getOrCreateCacheByFullName(Caches.PG_STAT.getName());
@@ -96,12 +103,36 @@ public class PoliticsCacheRefreshServiceImpl {
                 );
                 cacheVersionRepository.save(newVersionRow);
             } catch (Exception ex) {
-                igniteCacheService.destroyVersionedCache(Caches.POLITICS_DATASET2CONTROL_AREA.getName(), newVersion);
-                igniteCacheService.destroyVersionedCache(Caches.POLITICS_ERROR_MESSAGES.getName(), newVersion);
-                igniteCacheService.destroyVersionedCache(Caches.POLITICS_DATASET_EXCLUSION.getName(), newVersion);
-                igniteCacheService.destroyVersionedCache(Caches.POLITICS_CONTROL_AREA_RULES.getName(), newVersion);
+                List<String> politics = List.of(
+                        Caches.POLITICS_DATASET2CONTROL_AREA.getName(),
+                        Caches.POLITICS_ERROR_MESSAGES.getName(),
+                        Caches.POLITICS_DATASET_EXCLUSION.getName(),
+                        Caches.POLITICS_CONTROL_AREA_RULES.getName(),
+                        Caches.POLITICS_FILTER_FLAG.getName()
+                    );
+                for (String cacheName : politics) {
+                    try {
+                        igniteCacheService.destroyVersionedCache(cacheName, newVersion);
+                    } catch (Exception exc) {
+                        log.error("Прерывание обновления кэша politics. Ошибка при удалении кэша {}", cacheName);
+                    }
+                }
                 throw new RuntimeException("Ошибка при обновлении кэша politics: " + ex);
             }
+
+            // 6. Удаляем старые кэши, за исключением нового и предыдущего
+            if (currentVersion != null) {
+                destroyOldCaches(Caches.POLITICS_DATASET2CONTROL_AREA.getName(), currentVersion, newVersion);
+                destroyOldCaches(Caches.POLITICS_ERROR_MESSAGES.getName(), currentVersion, newVersion);
+                destroyOldCaches(Caches.POLITICS_DATASET_EXCLUSION.getName(), currentVersion, newVersion);
+                destroyOldCaches(Caches.POLITICS_CONTROL_AREA_RULES.getName(), currentVersion, newVersion);
+            }
+
+            // 7. Отправляем событие об обновлении в Kafka
+            kafkaProducerService.send(
+                    DB_CACHE_NAME,
+                    newVersion
+            );
         }
     }
 
@@ -112,5 +143,26 @@ public class PoliticsCacheRefreshServiceImpl {
         // если версия уже есть — очищаем перед заполнением
         newCompiledCache.clear();
         newCompiledCache.putAll(newData);
+    }
+
+    private void destroyOldCaches(String cacheName, int currentVersion, int newVersion) {
+        String currentFullCacheName = String.format("%s_%s", cacheName, currentVersion);
+        String newFullCacheName = String.format("%s_%s", cacheName, newVersion);
+        String prefix = cacheName + "_";
+
+        for (String existingCacheName : igniteCacheService.getCacheNames()) {
+            if (!existingCacheName.startsWith(prefix)) {
+                continue;
+            }
+
+            String suffix = existingCacheName.substring(prefix.length());
+            if (!suffix.matches("\\d+")) {
+                continue;
+            }
+
+            if (!existingCacheName.equals(currentFullCacheName) && !existingCacheName.equals(newFullCacheName)) {
+                igniteCacheService.destroyCacheByFullName(existingCacheName);
+            }
+        }
     }
 }

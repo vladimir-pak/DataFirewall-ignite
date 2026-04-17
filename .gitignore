@@ -1,5 +1,5 @@
 ### Maven / Spring ###
-target/
+/target/
 !.mvn/wrapper/maven-wrapper.jar
 .mvn/wrapper/maven-wrapper.properties
 pom.xml.tag
@@ -16,13 +16,13 @@ release.properties
 out/
 
 ### Apache Ignite ###
-work/
-db/
-wal/
-binary_meta/
-marshaller/
-ignite/
-ignite-work/
+/work/
+/db/
+/wal/
+/binary_meta/
+/marshaller/
+/ignite/
+/ignite-work/
 
 # Кейсы, когда IDEA создаёт временные файлы в проекте
 *.class

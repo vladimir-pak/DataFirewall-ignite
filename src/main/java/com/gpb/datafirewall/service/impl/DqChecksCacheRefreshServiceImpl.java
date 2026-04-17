@@ -1,8 +1,10 @@
 package com.gpb.datafirewall.service.impl;
 
 import com.gpb.datafirewall.service.IgniteCacheService;
+import com.gpb.datafirewall.service.KafkaProducerService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import com.gpb.datafirewall.compile.RuleCompilerPipeline;
 import com.gpb.datafirewall.model.CacheVersion;
@@ -23,11 +25,13 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class DqChecksCacheRefreshServiceImpl {
 
     private final DqChecksRepository dqChecksRepository;
     private final CacheVersionRepository cacheVersionRepository;
     private final IgniteCacheService igniteCacheService;
+    private final KafkaProducerService kafkaProducerService;
 
     private Map<Integer, String> changedOrNewRulesSql = new LinkedHashMap<>();
     private Set<Integer> deletedRuleIds = new LinkedHashSet<>();
@@ -79,17 +83,17 @@ public class DqChecksCacheRefreshServiceImpl {
                 this.changedOrNewRulesSql.put(id, dbSqlById.get(id));
             }
         }
+        log.info("Найдено {} измененных или новых проверок", this.changedOrNewRulesSql.size());
 
         for (Integer cachedId : cacheHashes.keySet()) {
             if (!dbHashes.containsKey(cachedId)) {
                 this.deletedRuleIds.add(cachedId);
             }
         }
+        log.info("Найдено {} удаленных проверок", this.deletedRuleIds.size());
 
-        // 6. Полностью обновляем dqchecks_hash снапшотом
-        hashCache.clear();
-        if (!dbHashes.isEmpty()) {
-            hashCache.putAll(dbHashes);
+        if (this.changedOrNewRulesSql.size() == 0 && this.deletedRuleIds.size() == 0) {
+            return;
         }
 
         RuleCompilerPipeline ruleCompiler = new RuleCompilerPipeline(2);
@@ -100,13 +104,13 @@ public class DqChecksCacheRefreshServiceImpl {
                         e -> SqlTextNormalizer.normalize(e.getValue())
                 ));
 
-        // 7. Компилируем только новые/изменённые правила
+        // 6. Компилируем только новые/изменённые правила
         Map<String, byte[]> compiledDelta =
                 normalized.isEmpty()
                         ? Collections.emptyMap()
                         : ruleCompiler.process(normalized);
 
-        // 8. Определяем текущую версию compiled_rules из БД
+        // 7. Определяем текущую версию compiled_rules из БД
         CacheVersion currentVersionRow =
                 cacheVersionRepository.findTopByIdCacheNameOrderByIdVersionDesc(Caches.COMPILED_RULES.getName())
                         .orElse(null);
@@ -116,7 +120,7 @@ public class DqChecksCacheRefreshServiceImpl {
                 : currentVersionRow.getId().getVersion();
         Integer newVersion = currentVersion == null ? 1 : currentVersion + 1;
 
-        // 9. Собираем новый compiled_rules_<newVersion>
+        // 8. Собираем новый compiled_rules_<newVersion>
         ClientCache<String, byte[]> newCompiledCache =
                 igniteCacheService.getOrCreateVersionedCache(Caches.COMPILED_RULES.getName(), newVersion);
 
@@ -147,11 +151,49 @@ public class DqChecksCacheRefreshServiceImpl {
             newCompiledCache.remove(String.format("Rule%s", deletedId));
         }
 
-        // 10. Фиксируем новую версию в БД
+        // 9. Фиксируем новую версию в БД
         CacheVersion newVersionRow = new CacheVersion(
                 new CacheVersionId(Caches.COMPILED_RULES.getName(), newVersion)
         );
         cacheVersionRepository.save(newVersionRow);
+
+        // 10. Полностью обновляем dqchecks_hash снапшотом
+        hashCache.clear();
+        if (!dbHashes.isEmpty()) {
+            hashCache.putAll(dbHashes);
+        }
+
+        // 11. Удаляем старые кэши, за исключением нового и предыдущего
+        if (currentVersion != null) {
+            destroyOldCaches(currentVersion, newVersion);
+        }
+
+        // 12. Отправляем событие об обновлении в Kafka
+        kafkaProducerService.send(
+                Caches.COMPILED_RULES.getName(),
+                newVersion
+        );
+    }
+
+    private void destroyOldCaches(int currentVersion, int newVersion) {
+        String currentFullCacheName = String.format("%s_%s", Caches.COMPILED_RULES.getName(), currentVersion);
+        String newFullCacheName = String.format("%s_%s", Caches.COMPILED_RULES.getName(), newVersion);
+        String prefix = Caches.COMPILED_RULES.getName() + "_";
+
+        for (String cacheName : igniteCacheService.getCacheNames()) {
+            if (!cacheName.startsWith(prefix)) {
+                continue;
+            }
+
+            String suffix = cacheName.substring(prefix.length());
+            if (!suffix.matches("\\d+")) {
+                continue;
+            }
+
+            if (!cacheName.equals(currentFullCacheName) && !cacheName.equals(newFullCacheName)) {
+                igniteCacheService.destroyCacheByFullName(cacheName);
+            }
+        }
     }
 
     public Map<Integer, String> getChangedOrNewRulesSql() {

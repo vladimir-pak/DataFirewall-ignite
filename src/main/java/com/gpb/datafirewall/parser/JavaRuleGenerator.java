@@ -1,6 +1,5 @@
 package com.gpb.datafirewall.parser;
 
-import com.gpb.datafirewall.cef.service.LogFileService;
 import com.gpb.datafirewall.parser.ast.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,7 +12,7 @@ import java.util.Locale;
  * Важно: Janino НЕ поддерживает switch-expression, поэтому используем if/else.
  */
 public class JavaRuleGenerator {
-    private static final Logger log = LoggerFactory.getLogger(LogFileService.class);
+    private static final Logger log = LoggerFactory.getLogger(JavaRuleGenerator.class);
 
     public String generate(String className, Expr expr) {
         StringBuilder sb = new StringBuilder();
@@ -37,8 +36,48 @@ public class JavaRuleGenerator {
         sb.append("    return s==null ? null : Integer.valueOf(s.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);\n");
         sb.append("  }\n");
 
-        sb.append("  private boolean regexp_like(String s, String pat){\n");
-        sb.append("    if(s==null) return false;\n");
+        sb.append("  private Integer toIntOrNull(Object v){\n");
+        sb.append("    try {\n");
+        sb.append("      if(v==null) return null;\n");
+        sb.append("      String s = v.toString().trim();\n");
+        sb.append("      if(s.isEmpty()) return null;\n");
+        sb.append("      if(s.endsWith(\".0\")) s = s.substring(0, s.length()-2);\n");
+        sb.append("      return Integer.valueOf(s);\n");
+        sb.append("    } catch(Exception e){ return null; }\n");
+        sb.append("  }\n");
+
+        sb.append("  private String castString(Object v){\n");
+        sb.append("    if(v==null) return null;\n");
+        sb.append("    if(v instanceof Double){\n");
+        sb.append("      double d = ((Double)v).doubleValue();\n");
+        sb.append("      if(d == Math.rint(d)) return String.valueOf((long)d);\n");
+        sb.append("    }\n");
+        sb.append("    if(v instanceof Float){\n");
+        sb.append("      float f = ((Float)v).floatValue();\n");
+        sb.append("      if(f == Math.rint(f)) return String.valueOf((long)f);\n");
+        sb.append("    }\n");
+        sb.append("    return v.toString();\n");
+        sb.append("  }\n");
+
+        sb.append("  private String substringSql(Object src, Object startObj, Object lenObj){\n");
+        sb.append("    String s = toStringSafe(src);\n");
+        sb.append("    Integer start = toIntOrNull(startObj);\n");
+        sb.append("    Integer len = toIntOrNull(lenObj);\n");
+        sb.append("    if(s==null || start==null || len==null) return null;\n");
+        sb.append("    if(len <= 0) return \"\";\n");
+        sb.append("    int from;\n");
+        sb.append("    if(start > 0) from = start - 1;\n");
+        sb.append("    else if(start < 0) from = s.length() + start;\n");
+        sb.append("    else from = 0;\n");
+        sb.append("    if(from < 0 || from >= s.length()) return \"\";\n");
+        sb.append("    int to = Math.min(from + len, s.length());\n");
+        sb.append("    return s.substring(from, to);\n");
+        sb.append("  }\n");
+
+        sb.append("  private boolean regexp_like(Object v, Object p){\n");
+        sb.append("    String s = toStringSafe(v);\n");
+        sb.append("    String pat = toStringSafe(p);\n");
+        sb.append("    if(s==null || pat==null) return false;\n");
         sb.append("    try{ return Pattern.compile(pat).matcher(s).find(); }catch(Exception e){ return false; }\n");
         sb.append("  }\n");
 
@@ -135,9 +174,24 @@ public class JavaRuleGenerator {
         sb.append("    return null;\n");
         sb.append("  }\n");
 
+        sb.append("  private boolean isIntegralObject(Object v){\n");
+        sb.append("    if(v instanceof Byte || v instanceof Short || v instanceof Integer || v instanceof Long) return true;\n");
+        sb.append("    if(v instanceof String) return ((String)v).matches(\"-?\\\\d+\");\n");
+        sb.append("    return false;\n");
+        sb.append("  }\n");
+
         sb.append("  private Object mul(Object a, Object b){ Double da=toDoubleOrNull(a), db=toDoubleOrNull(b); if(da!=null && db!=null) return da*db; return null; }\n");
         sb.append("  private Object div(Object a, Object b){ Double da=toDoubleOrNull(a), db=toDoubleOrNull(b); if(da!=null && db!=null && db!=0d) return da/db; return null; }\n");
-        sb.append("  private Object mod(Object a, Object b){ Double da=toDoubleOrNull(a), db=toDoubleOrNull(b); if(da!=null && db!=null && db!=0d) return da%db; return null; }\n");
+        sb.append("  private Object mod(Object a, Object b){\n");
+        sb.append("    if(isIntegralObject(a) && isIntegralObject(b)){\n");
+        sb.append("      Long la = toLongOrNull(a);\n");
+        sb.append("      Long lb = toLongOrNull(b);\n");
+        sb.append("      if(la!=null && lb!=null && lb!=0L) return la % lb;\n");
+        sb.append("    }\n");
+        sb.append("    Double da=toDoubleOrNull(a), db=toDoubleOrNull(b);\n");
+        sb.append("    if(da!=null && db!=null && db!=0d) return da%db;\n");
+        sb.append("    return null;\n");
+        sb.append("  }\n");
 
         sb.append("  private Period intervalToPeriod(String lit){\n");
         sb.append("    if(lit==null) return null;\n");
@@ -154,6 +208,101 @@ public class JavaRuleGenerator {
         sb.append("    return null;\n");
         sb.append("  }\n");
 
+        sb.append("  private String sqlLikeToRegex(String pattern){\n");
+        sb.append("    if(pattern==null) return null;\n");
+        sb.append("    StringBuilder out = new StringBuilder();\n");
+        sb.append("    out.append(\"^\");\n");
+        sb.append("    for(int i=0;i<pattern.length();i++){\n");
+        sb.append("      char c = pattern.charAt(i);\n");
+        sb.append("      if(c=='%'){\n");
+        sb.append("        out.append(\".*\");\n");
+        sb.append("      } else if(c=='_'){\n");
+        sb.append("        out.append(\".\");\n");
+        sb.append("      } else {\n");
+        sb.append("        if(\"\\\\.[]{}()+-^$?|*\".indexOf(c) >= 0){\n");
+        sb.append("          out.append(\"\\\\\\\\\");\n");
+        sb.append("        }\n");
+        sb.append("        out.append(c);\n");
+        sb.append("      }\n");
+        sb.append("    }\n");
+        sb.append("    out.append(\"$\");\n");
+        sb.append("    return out.toString();\n");
+        sb.append("  }\n");
+
+        sb.append("  private boolean likeSql(Object value, String pattern){\n");
+        sb.append("    String s = toStringSafe(value);\n");
+        sb.append("    if(s==null || pattern==null) return false;\n");
+        sb.append("    try{\n");
+        sb.append("      return Pattern.compile(sqlLikeToRegex(pattern), Pattern.DOTALL).matcher(s).matches();\n");
+        sb.append("    } catch(Exception e){ return false; }\n");
+        sb.append("  }\n");
+
+        sb.append("  private boolean notLikeSql(Object value, String pattern){\n");
+        sb.append("    String s = toStringSafe(value);\n");
+        sb.append("    if(s==null || pattern==null) return false;\n");
+        sb.append("    try{\n");
+        sb.append("      return !Pattern.compile(sqlLikeToRegex(pattern), Pattern.DOTALL).matcher(s).matches();\n");
+        sb.append("    } catch(Exception e){ return false; }\n");
+        sb.append("  }\n");
+
+        sb.append("  private boolean inSql(Object value, Object... options){\n");
+        sb.append("    if(value==null || options==null) return false;\n");
+        sb.append("    for(Object option : options){\n");
+        sb.append("      if(option!=null && java.util.Objects.equals(value, option)) return true;\n");
+        sb.append("    }\n");
+        sb.append("    return false;\n");
+        sb.append("  }\n");
+
+        sb.append("  private boolean notInSql(Object value, Object... options){\n");
+        sb.append("    if(value==null || options==null) return false;\n");
+        sb.append("    boolean hasNullOption = false;\n");
+        sb.append("    for(Object option : options){\n");
+        sb.append("      if(option==null){\n");
+        sb.append("        hasNullOption = true;\n");
+        sb.append("        continue;\n");
+        sb.append("      }\n");
+        sb.append("      if(java.util.Objects.equals(value, option)) return false;\n");
+        sb.append("    }\n");
+        sb.append("    if(hasNullOption) return false;\n");
+        sb.append("    return true;\n");
+        sb.append("  }\n");
+
+        sb.append("  private boolean betweenSql(Object value, Object from, Object to){\n");
+        sb.append("    if(value==null || from==null || to==null) return false;\n");
+        sb.append("    Double v = toDoubleOrNull(value);\n");
+        sb.append("    Double f = toDoubleOrNull(from);\n");
+        sb.append("    Double t = toDoubleOrNull(to);\n");
+        sb.append("    if(v!=null && f!=null && t!=null){\n");
+        sb.append("      return v >= f && v <= t;\n");
+        sb.append("    }\n");
+        sb.append("    LocalDate dv = toDateOrNull(value);\n");
+        sb.append("    LocalDate df = toDateOrNull(from);\n");
+        sb.append("    LocalDate dt = toDateOrNull(to);\n");
+        sb.append("    if(dv!=null && df!=null && dt!=null){\n");
+        sb.append("      return !dv.isBefore(df) && !dv.isAfter(dt);\n");
+        sb.append("    }\n");
+        sb.append("    String sv = toStringSafe(value);\n");
+        sb.append("    String sf = toStringSafe(from);\n");
+        sb.append("    String st = toStringSafe(to);\n");
+        sb.append("    if(sv==null || sf==null || st==null) return false;\n");
+        sb.append("    return sv.compareTo(sf) >= 0 && sv.compareTo(st) <= 0;\n");
+        sb.append("  }\n");
+
+        sb.append("  private boolean notBetweenSql(Object value, Object from, Object to){\n");
+        sb.append("    if(value==null || from==null || to==null) return false;\n");
+        sb.append("    return !betweenSql(value, from, to);\n");
+        sb.append("  }\n");
+
+        sb.append("  private Long toLongOrNull(Object v){\n");
+        sb.append("    try {\n");
+        sb.append("      if(v==null) return null;\n");
+        sb.append("      String s = v.toString().trim();\n");
+        sb.append("      if(s.isEmpty()) return null;\n");
+        sb.append("      if(s.endsWith(\".0\")) s = s.substring(0, s.length()-2);\n");
+        sb.append("      return Long.valueOf(s);\n");
+        sb.append("    } catch(Exception e){ return null; }\n");
+        sb.append("  }\n");
+
         sb.append("  public boolean apply(java.util.Map<String,String> data){\n");
         sb.append("    try{\n");
         sb.append("      return ").append(genBool(expr)).append(";\n");
@@ -168,6 +317,18 @@ public class JavaRuleGenerator {
 
     private boolean isNumericExpr(Expr e) {
         if (e instanceof NumberExpr) return true;
+
+        if (e instanceof CastExpr c) {
+            String type = c.asType == null ? "" : c.asType.toLowerCase(Locale.ROOT);
+            return type.equals("int")
+                    || type.equals("integer")
+                    || type.equals("bigint")
+                    || type.equals("long")
+                    || type.equals("double")
+                    || type.equals("float")
+                    || type.equals("decimal")
+                    || type.equals("numeric");
+        }
 
         if (e instanceof FuncExpr f) {
             String fn = f.funcName.toLowerCase(Locale.ROOT);
@@ -192,7 +353,12 @@ public class JavaRuleGenerator {
             if (fn.equals("current_date") || fn.equals("now")) return true;
         }
 
-        if (e instanceof CastExpr) return true;
+        if (e instanceof CastExpr c) {
+            String type = c.asType == null ? "" : c.asType.toLowerCase(Locale.ROOT);
+            return type.equals("date")
+                    || type.equals("timestamp")
+                    || type.equals("datetime");
+        }
 
         if (e instanceof FieldExpr fe) {
             return fe.name.toLowerCase(Locale.ROOT).contains("дата");
@@ -242,12 +408,17 @@ public class JavaRuleGenerator {
                 || e instanceof IsNullExpr
                 || e instanceof IsNotNullExpr
                 || e instanceof LikeExpr
-                || e instanceof InExpr) {
+                || e instanceof NotLikeExpr
+                || e instanceof InExpr
+                || e instanceof NotInExpr
+                || e instanceof BetweenExpr
+                || e instanceof NotBetweenExpr) {
             return genExpr(e);
         }
 
         if (e instanceof FuncExpr f) {
             String fname = f.funcName.toLowerCase(Locale.ROOT);
+
             if (fname.equals("regexp_like")) {
                 return genExpr(e);
             }
@@ -336,10 +507,10 @@ public class JavaRuleGenerator {
 
             switch (ce.op) {
                 case "=":
-                    return "(" + l + "!=null && " + l + ".equals(" + r + "))";
+                    return "java.util.Objects.equals(" + l + "," + r + ")";
                 case "!=":
                 case "<>":
-                    return "(" + l + "==null || !" + l + ".equals(" + r + "))";
+                    return "(!java.util.Objects.equals(" + l + "," + r + "))";
                 default:
                     throw new IllegalStateException("Unsupported op for strings: " + ce.op);
             }
@@ -355,37 +526,69 @@ public class JavaRuleGenerator {
 
         if (e instanceof LikeExpr le) {
             String val = genExpr(le.value);
-            String regex = escapeJava(le.pattern).replace("%", ".*").replace("_", ".");
-            return "(toStringSafe(" + val + ")!=null && toStringSafe(" + val + ").matches(\"" + regex + "\"))";
+            return "likeSql(" + val + ",\"" + escapeJava(le.pattern) + "\")";
+        }
+
+        if (e instanceof NotLikeExpr nle) {
+            String val = genExpr(nle.value);
+            return "notLikeSql(" + val + ",\"" + escapeJava(nle.pattern) + "\")";
         }
 
         if (e instanceof InExpr in) {
-            String val = genExpr(in.value);
-            StringBuilder sb = new StringBuilder("(");
+            StringBuilder sb = new StringBuilder();
+            sb.append("inSql(").append(genExpr(in.value));
 
-            if (in.options == null || in.options.isEmpty()) {
-                sb.append("false");
-            } else {
-                for (int i = 0; i < in.options.size(); i++) {
-                    if (i > 0) sb.append(" || ");
-
-                    String opt = genExpr(in.options.get(i));
-                    sb.append("(")
-                            .append(val)
-                            .append("!=null && ")
-                            .append(val)
-                            .append(".equals(")
-                            .append(opt)
-                            .append("))");
-                }
+            for (Expr option : in.options) {
+                sb.append(",").append(genExpr(option));
             }
 
             sb.append(")");
             return sb.toString();
         }
 
+        if (e instanceof NotInExpr nin) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("notInSql(").append(genExpr(nin.value));
+
+            for (Expr option : nin.options) {
+                sb.append(",").append(genExpr(option));
+            }
+
+            sb.append(")");
+            return sb.toString();
+        }
+
+        if (e instanceof BetweenExpr be) {
+            return "betweenSql("
+                    + genExpr(be.value) + ","
+                    + genExpr(be.from) + ","
+                    + genExpr(be.to)
+                    + ")";
+        }
+
+        if (e instanceof NotBetweenExpr nbe) {
+            return "notBetweenSql("
+                    + genExpr(nbe.value) + ","
+                    + genExpr(nbe.from) + ","
+                    + genExpr(nbe.to)
+                    + ")";
+        }
+
         if (e instanceof FuncExpr f) {
             String fname = f.funcName.toLowerCase(Locale.ROOT);
+
+            if (fname.equals("substring") || fname.equals("substr")) {
+                if (f.args.size() == 2) {
+                    return "substringSql(" + genExpr(f.args.get(0)) + "," + genExpr(f.args.get(1)) + ",2147483647)";
+                }
+                if (f.args.size() == 3) {
+                    return "substringSql(" 
+                            + genExpr(f.args.get(0)) + "," 
+                            + genExpr(f.args.get(1)) + "," 
+                            + genExpr(f.args.get(2)) + ")";
+                }
+                return "null";
+            }
 
             if (fname.equals("syslib.utf8_length") || fname.equals("utf8_length") || fname.equals("length")) {
                 return "utf8Length(" + genExpr(f.args.get(0)) + ")";
@@ -397,7 +600,7 @@ public class JavaRuleGenerator {
 
             if (fname.equals("upper")) {
                 String x = genExpr(f.args.get(0));
-                return "(toStringSafe(" + x + ")==null?null:toStringSafe(" + x + ").toUpperCase())";
+                return "(toStringSafe(" + x + ")==null?null:toStringSafe(" + x + ").toUpperCase(Locale.ROOT))";
             }
 
             if (fname.equals("years_add")) {
@@ -439,12 +642,34 @@ public class JavaRuleGenerator {
             if (fname.equals("current_date")) return "current_date()";
             if (fname.equals("now")) return "now()";
 
-            if (f.args == null || f.args.isEmpty()) return "null";
+            if (f.args == null || f.args.isEmpty()) throw new IllegalStateException("Unsupported function: " + f.funcName);
             return "toStringSafe(" + genExpr(f.args.get(0)) + ")";
         }
 
         if (e instanceof CastExpr c) {
-            return genExpr(c.expr);
+            String type = c.asType == null ? "" : c.asType.toLowerCase(Locale.ROOT);
+            String inner = genExpr(c.expr);
+
+            if (type.equals("int") || type.equals("integer")) {
+                return "toIntOrNull(" + inner + ")";
+            }
+
+            if (type.equals("bigint") || type.equals("long")) {
+                return "toLongOrNull(" + inner + ")";
+            }
+
+            if (type.equals("string") 
+                    || type.equals("varchar") 
+                    || type.equals("char") 
+                    || type.equals("text")) {
+                return "castString(" + inner + ")";
+            }
+
+            if (type.equals("date")) {
+                return "toDateOrNull(" + inner + ")";
+            }
+
+            return inner;
         }
 
         throw new IllegalStateException("Unhandled expr type: " + e.getClass());

@@ -80,6 +80,13 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
     }
 
     @Override
+    public Expr visitNotLikeExpr(SqlWhereParser.NotLikeExprContext ctx) {
+        Expr val = visit(ctx.value());
+        String pattern = unquoteSingle(ctx.STRING().getText());
+        return new NotLikeExpr(val, pattern);
+    }
+
+    @Override
     public Expr visitInExpr(SqlWhereParser.InExprContext ctx) {
         Expr val = visit(ctx.value(0));
         List<Expr> options = new ArrayList<>();
@@ -87,6 +94,34 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
             options.add(visit(ctx.value(i)));
         }
         return new InExpr(val, options);
+    }
+
+    @Override
+    public Expr visitNotInExpr(SqlWhereParser.NotInExprContext ctx) {
+        Expr val = visit(ctx.value(0));
+        List<Expr> options = new ArrayList<>();
+        for (int i = 1; i < ctx.value().size(); i++) {
+            options.add(visit(ctx.value(i)));
+        }
+        return new NotInExpr(val, options);
+    }
+
+    @Override
+    public Expr visitBetweenExpr(SqlWhereParser.BetweenExprContext ctx) {
+        Expr val = visit(ctx.value(0));
+        Expr from = visit(ctx.value(1));
+        Expr to = visit(ctx.value(2));
+
+        return new BetweenExpr(val, from, to);
+    }
+
+    @Override
+    public Expr visitNotBetweenExpr(SqlWhereParser.NotBetweenExprContext ctx) {
+        Expr val = visit(ctx.value(0));
+        Expr from = visit(ctx.value(1));
+        Expr to = visit(ctx.value(2));
+
+        return new NotBetweenExpr(val, from, to);
     }
 
     @Override
@@ -108,6 +143,8 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
     public Expr visitFuncPredicateExpr(SqlWhereParser.FuncPredicateExprContext ctx) {
         return visit(ctx.functionCall());
     }
+
+    
 
     // --------------------
     // Value/arithmetic layer

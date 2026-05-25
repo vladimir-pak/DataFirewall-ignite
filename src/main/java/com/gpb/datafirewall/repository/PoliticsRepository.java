@@ -1,6 +1,7 @@
 package com.gpb.datafirewall.repository;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -47,21 +48,27 @@ public class PoliticsRepository {
         });
     }
 
-    public Map<String, String> getErrorMessages() {
+    public Map<String, Map<String, String>> getErrorMessages() {
         String sql = """
-            SELECT 'Rule' || id::varchar as id, error_descr
+            SELECT 
+                'Rule' || id::varchar AS id,
+                error_descr,
+                logic_classif AS classification
             FROM datafirewall.dqchecks
-            WHERE status = 'enabled';
-        """;
+            WHERE status = 'enabled'
+            """;
 
         return jdbcTemplate.query(sql, rs -> {
-            Map<String, String> result = new HashMap<>();
+            Map<String, Map<String, String>> result = new LinkedHashMap<>();
 
             while (rs.next()) {
-                result.put(
-                    rs.getString("id"),
-                    rs.getString("error_descr")
-                );
+                String id = rs.getString("id");
+
+                Map<String, String> idInfo = new LinkedHashMap<>();
+                idInfo.put("errorDescription", rs.getString("error_descr"));
+                idInfo.put("classification", rs.getString("classification"));
+
+                result.put(id, idInfo);
             }
 
             return result;

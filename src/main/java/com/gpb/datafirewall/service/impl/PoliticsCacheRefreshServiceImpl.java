@@ -81,7 +81,7 @@ public class PoliticsCacheRefreshServiceImpl {
                 Map<String, String> dataset2ControlArea = politicsRepository.getDataset2ControlArea();
                 createNewVersion(Caches.POLITICS_DATASET2CONTROL_AREA.getName(), newVersion, dataset2ControlArea);
                 
-                Map<String, String> errorMessages = politicsRepository.getErrorMessages();
+                Map<String, Map<String, String>> errorMessages = politicsRepository.getErrorMessages();
                 createNewVersion(Caches.POLITICS_ERROR_MESSAGES.getName(), newVersion, errorMessages);
 
                 Map<String, Set<String>> datasetExclusion = politicsRepository.getDatasetExclusion();

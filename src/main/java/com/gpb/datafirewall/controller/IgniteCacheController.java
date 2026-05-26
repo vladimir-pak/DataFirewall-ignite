@@ -1,4 +1,5 @@
 package com.gpb.datafirewall.controller;
+import com.gpb.datafirewall.cef.SvoiApiLog;
 import com.gpb.datafirewall.dto.CacheResponseDto;
 import com.gpb.datafirewall.dto.RefreshResult;
 import com.gpb.datafirewall.model.CacheVersion;
@@ -23,7 +24,6 @@ import javax.cache.Cache;
 @RequiredArgsConstructor
 @RequestMapping("/api/v1")
 public class IgniteCacheController {
-
     private final IgniteCacheService igniteCacheService;
     private final CacheVersionRepository cacheVersionRepository;
     private final CacheRefreshService cacheRefreshService;
@@ -33,6 +33,7 @@ public class IgniteCacheController {
      * @param fullCacheName - Полное наименование кэша с версией
      * @return JSON с кэшем. byte[] переводится в String
      */
+    @SvoiApiLog(functionName = "Retrieving cache")
     @GetMapping("/cache/{fullCacheName}")
     public CacheResponseDto<String, Object> getVersionedCache(@PathVariable String fullCacheName) {
         return getCache(fullCacheName);
@@ -43,6 +44,7 @@ public class IgniteCacheController {
      * @param cacheName - наименование кэша без версии
      * @return JSON с кэшем последней версии
      */
+    @SvoiApiLog(functionName = "Retrieving cache")
     @GetMapping("/cache/{cacheName}/latest")
     public CacheResponseDto<String, Object> getActualCache(@PathVariable String cacheName) {
         String dbCacheName = cacheName.startsWith("politics") ? "politics" : cacheName;
@@ -59,6 +61,7 @@ public class IgniteCacheController {
      * Метод для обновления всего кэша вручную.
      * @return 200 - если отработан. 409 - если уже работает обновление. 408 - timeout. 500 - ошибка обновления
      */
+    @SvoiApiLog(functionName = "Manual refreshing cache")
     @PutMapping("/cache/refresh")
     public ResponseEntity<RefreshResult> refreshNow() {
         RefreshResult result = cacheRefreshService.refreshCacheNow();
@@ -82,6 +85,7 @@ public class IgniteCacheController {
      * Метод для проверки расписания. true - включено, false - выключено.
      * @return boolean
      */
+    @SvoiApiLog(functionName = "Retrieving cache refreshing status")
     @GetMapping("/cache/scheduled/status")
     public ResponseEntity<Boolean> isScheduledRefreshEnabled() {
         return ResponseEntity.ok(cacheRefreshService.isScheduledRefreshEnabled());
@@ -91,6 +95,7 @@ public class IgniteCacheController {
      * Метод для включения обновления по расписанию
      * @return String
      */
+    @SvoiApiLog(functionName = "Enable refreshing schedule")
     @PutMapping("/cache/scheduled/enable")
     public ResponseEntity<String> enableScheduler() {
         cacheRefreshService.enableScheduledRefresh();
@@ -101,6 +106,7 @@ public class IgniteCacheController {
      * Метод для выключения обновления по расписанию
      * @return String
      */
+    @SvoiApiLog(functionName = "Disable refreshing schedule")
     @PutMapping("/cache/scheduled/disable")
     public ResponseEntity<String> disableScheduler() {
         cacheRefreshService.disableScheduledRefresh();
@@ -112,14 +118,12 @@ public class IgniteCacheController {
      * @param cacheName
      * @return
      */
+    @SvoiApiLog(functionName = "Deleting cache")
     @DeleteMapping("/cache/delete/{cacheName}")
     public ResponseEntity<String> deleteCache(@PathVariable String cacheName) {
         igniteCacheService.destroyAllVersions(cacheName);
         return ResponseEntity.ok(String.format("Кэш %s удален", cacheName));
     }
-
-    
-
 
     /**
      * Метод для получения и сериализации кэша

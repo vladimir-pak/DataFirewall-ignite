@@ -42,6 +42,11 @@ public class SvoiLogger {
         send(deviceEventClassID, name, message, severity, journal);
     }
 
+    public void sendApiRequest(String endpoint, String message, String user) {
+        SvoiJournal journal = svoiJournalFactory.getJournalSource();
+        send("apiCall", "API Request", message, SvoiSeverityEnum.ONE, journal);
+    }
+
     private void send(String deviceEventClassID,
                       String name,
                       String message,
@@ -54,8 +59,8 @@ public class SvoiLogger {
              MDC.MDCCloseable b = MDC.putCloseable("log_type", "audit_log")) {
 
             log.info(journalToString(journal));
-
         }
+
         if (!logsDatabaseProperties.isEnabled()) return;
 
         try {

@@ -42,8 +42,35 @@ public class SvoiLogger {
         send(deviceEventClassID, name, message, severity, journal);
     }
 
-    public void sendApiRequest(String endpoint, String message, String user) {
+    public void sendKafkaMessage(
+        String message, 
+        String user,
+        String ip,
+        String dns,
+        int port
+    ) {
         SvoiJournal journal = svoiJournalFactory.getJournalSource();
+        journal.setDhost(dns);
+        journal.setDst(ip);
+        journal.setDuser(user);
+        journal.setDpt(port);
+        send("kafkaMessage", "Send Kafka Message", message, SvoiSeverityEnum.ONE, journal);
+    }
+
+    public void sendApiRequest(
+        String endpoint, 
+        String message, 
+        String user,
+        String ip,
+        String dns,
+        int port
+    ) {
+        SvoiJournal journal = svoiJournalFactory.getJournalSource();
+        journal.setShost(dns);
+        journal.setSrc(ip);
+        journal.setSuser(user);
+        journal.setSpt(port);
+        message += " " + endpoint;
         send("apiCall", "API Request", message, SvoiSeverityEnum.ONE, journal);
     }
 

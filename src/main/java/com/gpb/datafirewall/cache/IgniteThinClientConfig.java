@@ -72,7 +72,7 @@ public class IgniteThinClientConfig {
                 );
             }
 
-            KeyStore keyStore = KeyStore.getInstance("JKS");
+            KeyStore keyStore = KeyStore.getInstance("PKCS12");
             try (FileInputStream in = new FileInputStream(sslProps.getKeyStorePath())) {
                 keyStore.load(in, sslProps.getKeyStorePassword().toCharArray());
             }
@@ -81,7 +81,7 @@ public class IgniteThinClientConfig {
                     KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
             kmf.init(keyStore, sslProps.getKeyStorePassword().toCharArray());
 
-            KeyStore trustStore = KeyStore.getInstance("JKS");
+            KeyStore trustStore = KeyStore.getInstance("PKCS12");
             try (FileInputStream in = new FileInputStream(sslProps.getTrustStorePath())) {
                 trustStore.load(in, sslProps.getTrustStorePassword().toCharArray());
             }

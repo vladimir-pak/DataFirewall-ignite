@@ -30,7 +30,7 @@ public class SvoiLogger {
     private final SysProperties sysProperties;
     private final LogsDatabaseProperties logsDatabaseProperties;
     private final LogRepository logRepository;
-    private final SvoiJournalFactory svoiJournalFactory = new SvoiJournalFactory();
+    private final SvoiJournalFactory svoiJournalFactory;
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss");
 
     public void sendInternal(String deviceEventClassID,

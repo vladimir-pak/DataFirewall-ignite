@@ -85,7 +85,7 @@ public class KafkaProducerServiceImpl implements KafkaProducerService {
             return colonIndex;
         }
 
-        return Integer.parseInt(hostname.substring(1, colonIndex));
+        return Integer.parseInt(hostname.substring(colonIndex + 1));
     }
 
     private String resolveUsername(Map<String, Object> props) {

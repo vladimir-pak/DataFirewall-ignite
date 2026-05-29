@@ -3,7 +3,10 @@ package com.gpb.datafirewall.jwt;
 import java.io.IOException;
 import java.util.List;
 
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import jakarta.servlet.FilterChain;
@@ -15,58 +18,67 @@ import lombok.RequiredArgsConstructor;
 @Component
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
+
+    private static final List<String> PROTECTED_PATHS = List.of(
+            "/api/v1/**"
+    );
+
+    private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
+
     private final JwtUtil jwtUtil;
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain filterChain) throws ServletException, IOException {
-        List<String> protectedPaths = List.of(
-                "/api/v1/*");
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain
+    ) throws ServletException, IOException {
 
-        String path = request.getServletPath() +
-                (request.getPathInfo() != null ? request.getPathInfo() : "");
+        String path = getRequestPath(request);
 
-        if (!isProtectedPath(path, protectedPaths)) {
+        if (!isProtectedPath(path)) {
             filterChain.doFilter(request, response);
             return;
         }
 
         String token = extractToken(request);
-        if (token == null) {
-            throw new RuntimeException("Token is missing!");
+
+        if (token == null || token.isBlank()) {
+            response.sendError(HttpStatus.UNAUTHORIZED.value(), "Token is missing");
+            return;
         }
+
         if (!jwtUtil.validateToken(token)) {
-            throw new RuntimeException("Invalid token!");
+            response.sendError(HttpStatus.UNAUTHORIZED.value(), "Invalid token");
+            return;
         }
+
         filterChain.doFilter(request, response);
     }
 
-    private boolean isProtectedPath(String path, List<String> unprotectedPaths) {
-        for (String pattern : unprotectedPaths) {
-            // Для точного совпадения
-            if (path.equals(pattern)) {
-                return true;
-            }
-            // Для /** wildcard
-            if (pattern.endsWith("/**") && path.startsWith(pattern.substring(0, pattern.length() - 3))) {
-                return true;
-            }
-            // Для /* PathVariable
-            if (pattern.endsWith("/*") &&
-                    path.startsWith(pattern.substring(0, pattern.length() - 2)) &&
-                    path.substring(pattern.length() - 2).matches("/[^/]+")) {
-                return true;
-            }
+    private boolean isProtectedPath(String path) {
+        return PROTECTED_PATHS.stream()
+                .anyMatch(pattern -> PATH_MATCHER.match(pattern, path));
+    }
+
+    private String getRequestPath(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        String contextPath = request.getContextPath();
+
+        if (contextPath != null && !contextPath.isBlank() && uri.startsWith(contextPath)) {
+            return uri.substring(contextPath.length());
         }
-        return false;
+
+        return uri;
     }
 
     private String extractToken(HttpServletRequest request) {
-        String header = request.getHeader("Authorization");
+        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+
         if (header != null && header.startsWith("Bearer ")) {
             return header.substring(7);
         }
+
         return null;
     }
 }

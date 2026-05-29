@@ -40,6 +40,7 @@ public class SvoiJournalFactory {
     public SvoiJournal getJournalSource() {
         SvoiJournal svoiJournal = this.getBaseJournal();
         HostInfo host = getLocalHostInfo();
+        svoiJournal.setProjectName(projectName);
         svoiJournal.setDst(host.ip);
         svoiJournal.setDvchost(host.name);
         svoiJournal.setDpt(localPort);

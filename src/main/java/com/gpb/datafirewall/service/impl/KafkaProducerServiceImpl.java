@@ -58,6 +58,29 @@ public class KafkaProducerServiceImpl implements KafkaProducerService {
         );
     }
 
+    public void sendHandler(String cacheName, Integer version, String handler) {
+        CacheUpdateMessage message = new CacheUpdateMessage(cacheName, version);
+        kafkaTemplate.send(topic, cacheName, message);
+
+        Map<String, Object> props = kafkaProperties.buildProducerProperties();
+
+        String bootstrapServers = resolveBootstrapServers();
+        String securityProtocol = stringValue(props.get(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG));
+        String mechanism = stringValue(props.get(SaslConfigs.SASL_MECHANISM));
+        String username = resolveUsername(props);
+        int port = resolvePort();
+
+        String messageLog = String.format("securityProtocol: %s, mechanism: %s", securityProtocol, mechanism);
+
+        svoiCustomLogger.sendKafkaMessage(
+            messageLog,
+            username,
+            bootstrapServers,
+            bootstrapServers,
+            port
+        );
+    }
+
     private String resolveBootstrapServers() {
         List<String> servers = kafkaProperties.getBootstrapServers();
 

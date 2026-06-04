@@ -16,9 +16,10 @@ public class ToggleHandlerServiceImpl implements ToggleHandlerService {
     
     @Override
     public void toggle(String handler) {
-        kafkaProducerService.send(
+        kafkaProducerService.sendHandler(
                 CACHE_NAME,
-                -1
+                -1,
+                handler
         );
     }
 }

@@ -17,8 +17,12 @@ import com.gpb.datafirewall.service.KafkaProducerService;
 )
 public class NoopKafkaProducerServiceImpl implements KafkaProducerService {
 
-    @Override
     public void send(String cacheName, Integer version) {
+        // Kafka disabled, do nothing
+        System.out.println("Kafka disabled");
+    }
+
+    public void sendHandler(String cacheName, Integer version, String handler) {
         // Kafka disabled, do nothing
         System.out.println("Kafka disabled");
     }

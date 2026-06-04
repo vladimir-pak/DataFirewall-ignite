@@ -18,7 +18,7 @@ public class ToggleHandlerServiceImpl implements ToggleHandlerService {
     public void toggle(String handler) {
         kafkaProducerService.sendHandler(
                 CACHE_NAME,
-                -1,
+                0,
                 handler
         );
     }

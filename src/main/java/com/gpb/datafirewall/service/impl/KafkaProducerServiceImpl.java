@@ -59,7 +59,7 @@ public class KafkaProducerServiceImpl implements KafkaProducerService {
     }
 
     public void sendHandler(String cacheName, Integer version, String handler) {
-        CacheUpdateMessage message = new CacheUpdateMessage(cacheName, version);
+        CacheUpdateMessage message = new CacheUpdateMessage(cacheName, version, handler);
         kafkaTemplate.send(topic, cacheName, message);
 
         Map<String, Object> props = kafkaProperties.buildProducerProperties();

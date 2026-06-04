@@ -62,7 +62,7 @@ public class IgniteCacheController {
      * @return 200 - если отработан. 409 - если уже работает обновление. 408 - timeout. 500 - ошибка обновления
      */
     @SvoiApiLog(functionName = "Manual refreshing cache")
-    @PostMapping("/cache/refresh")
+    @PutMapping("/cache/refresh")
     public ResponseEntity<RefreshResult> refreshNow() {
         RefreshResult result = cacheRefreshService.refreshCacheNow();
 

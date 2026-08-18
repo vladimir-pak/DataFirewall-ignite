@@ -60,15 +60,15 @@ public class JwtTokenRegistryRepository {
         return Boolean.TRUE.equals(result);
     }
 
-    public boolean revoke(UUID jti) {
+    public boolean revoke(String service) {
 
         int updated = jdbcTemplate.update("""
                 update datafirewall.jwt_token_registry
                 set revoked_at = current_timestamp
-                where jti = ?
+                where service = ?
                   and revoked_at is null
                 """,
-                jti
+                service
         );
 
         return updated > 0;

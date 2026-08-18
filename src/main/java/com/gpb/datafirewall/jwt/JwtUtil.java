@@ -142,23 +142,13 @@ public class JwtUtil {
     }
 
     @Transactional
-    public boolean revokeToken(String token) {
+    public boolean revokeToken(String service) {
 
         try {
-            Claims claims = parseClaims(token);
-
-            UUID jti = UUID.fromString(claims.getId());
-
             boolean revoked =
-                    tokenRegistryRepository.revoke(jti);
+                    tokenRegistryRepository.revoke(service);
 
             if (revoked) {
-
-                String service = claims.get(
-                        SERVICE_CLAIM,
-                        String.class
-                );
-
                 svoiCustomLogger.sendInternal(
                         "jwtRevoke",
                         "Jwt Revocation",

@@ -1,6 +1,8 @@
 package com.gpb.datafirewall.controller;
 
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,12 +32,10 @@ public class JwtController {
     }
 
     @Tag(name = "Revoke token", description = "Controller for revoking token by service")
-    @DeleteMapping("revoke")
-    @SvoiApiLog(functionName = "Generating JWT")
-    public String revokeToken(@RequestBody RequestJwtDto body) {
-        return jwtUtil.generateToken(
-            body.getSecret(),
-            body.getService()
-        );
+    @DeleteMapping("revoke/{service}")
+    @SvoiApiLog(functionName = "Revoking JWT")
+    public ResponseEntity<String> revokeToken(@PathVariable String service) {
+        jwtUtil.revokeToken(service);
+        return ResponseEntity.ok("Token for service " + service + " revoked");
     }
 }

@@ -1,0 +1,76 @@
+package com.gpb.datafirewall.jwt;
+
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.UUID;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+import lombok.RequiredArgsConstructor;
+
+@Repository
+@RequiredArgsConstructor
+public class JwtTokenRegistryRepository {
+
+    private final JdbcTemplate jdbcTemplate;
+
+    public void register(
+            UUID jti,
+            String service,
+            String subject,
+            Instant issuedAt,
+            Instant expiresAt
+    ) {
+        jdbcTemplate.update("""
+                insert into datafirewall.jwt_token_registry (
+                    jti,
+                    service,
+                    subject,
+                    issued_at,
+                    expires_at
+                )
+                values (?, ?, ?, ?, ?)
+                """,
+                jti,
+                service,
+                subject,
+                Timestamp.from(issuedAt),
+                Timestamp.from(expiresAt)
+        );
+    }
+
+    public boolean isActive(UUID jti, String service) {
+
+        Boolean result = jdbcTemplate.queryForObject("""
+                select exists (
+                    select 1
+                    from datafirewall.jwt_token_registry
+                    where jti = ?
+                      and service = ?
+                      and revoked_at is null
+                      and expires_at > current_timestamp
+                )
+                """,
+                Boolean.class,
+                jti,
+                service
+        );
+
+        return Boolean.TRUE.equals(result);
+    }
+
+    public boolean revoke(UUID jti) {
+
+        int updated = jdbcTemplate.update("""
+                update datafirewall.jwt_token_registry
+                set revoked_at = current_timestamp
+                where jti = ?
+                  and revoked_at is null
+                """,
+                jti
+        );
+
+        return updated > 0;
+    }
+}

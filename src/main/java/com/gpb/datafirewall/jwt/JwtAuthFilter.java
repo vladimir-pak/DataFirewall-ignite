@@ -9,6 +9,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.gpb.datafirewall.cef.SvoiLogger;
+import com.gpb.datafirewall.cef.enums.SvoiSeverityEnum;
+
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,6 +30,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
 
+    private final SvoiLogger svoiCustomLogger;
+
     @Override
     protected void doFilterInternal(
             HttpServletRequest request,
@@ -44,11 +49,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String token = extractToken(request);
 
         if (token == null || token.isBlank()) {
+            logAuthFailed("Token is missing");
             response.sendError(HttpStatus.UNAUTHORIZED.value(), "Token is missing");
             return;
         }
 
         if (!jwtUtil.validateToken(token)) {
+            logAuthFailed("Invalid token");
             response.sendError(HttpStatus.UNAUTHORIZED.value(), "Invalid token");
             return;
         }
@@ -80,5 +87,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
 
         return null;
+    }
+
+    private void logAuthFailed(String message) {
+        svoiCustomLogger.sendInternal(
+                "authFailed",
+                "authFailed",
+                "JWT auth failed. " + message,
+                SvoiSeverityEnum.ONE
+        );
     }
 }

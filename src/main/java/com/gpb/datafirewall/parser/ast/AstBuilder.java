@@ -36,6 +36,32 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
     }
 
     @Override
+    public Expr visitRegexpLikeFuncExpr(
+            SqlWhereParser.RegexpLikeFuncExprContext ctx
+    ) {
+        Expr left = visit(ctx.value());
+
+        Expr pattern;
+
+        if (ctx.STRING() != null) {
+            pattern = new StringExpr(
+                    unquoteSingle(ctx.STRING().getText())
+            );
+        } else {
+            String raw = unquoteDouble(
+                    ctx.DQIDENT().getText()
+            ).replace("\\\"", "\"");
+
+            pattern = new StringExpr(raw);
+        }
+
+        return new FuncExpr(
+                "regexp_like",
+                List.of(left, pattern)
+        );
+    }
+
+    @Override
     public Expr visitNotExpr(SqlWhereParser.NotExprContext ctx) {
         return new NotExpr(visit(ctx.notExpression()));
     }

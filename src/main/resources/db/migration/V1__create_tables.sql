@@ -20,5 +20,5 @@ create index idx_jwt_token_registry_expires_at
     on datafirewall.jwt_token_registry (expires_at);
 
 create index idx_jwt_token_registry_service_active
-    on jwt_token_registry (service)
+    on datafirewall.jwt_token_registry (service)
     where revoked_at is null;

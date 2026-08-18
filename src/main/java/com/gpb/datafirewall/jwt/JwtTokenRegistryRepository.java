@@ -73,4 +73,22 @@ public class JwtTokenRegistryRepository {
 
         return updated > 0;
     }
+
+    public boolean existsActiveByService(String service) {
+
+        Boolean exists = jdbcTemplate.queryForObject("""
+                select exists (
+                    select 1
+                    from jwt_token_registry
+                    where service = ?
+                    and revoked_at is null
+                    and expires_at > current_timestamp
+                )
+                """,
+                Boolean.class,
+                service
+        );
+
+        return Boolean.TRUE.equals(exists);
+    }
 }

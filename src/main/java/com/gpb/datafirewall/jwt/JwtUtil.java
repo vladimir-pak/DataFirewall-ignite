@@ -15,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.gpb.datafirewall.cef.SvoiLogger;
 import com.gpb.datafirewall.cef.enums.SvoiSeverityEnum;
+import com.gpb.datafirewall.jwt.exception.JwtInvalidSecretException;
+import com.gpb.datafirewall.jwt.exception.JwtTokenAlreadyExistsException;
 import com.gpb.datafirewall.properties.JwtProperties;
 
 import io.jsonwebtoken.Claims;
@@ -57,11 +59,16 @@ public class JwtUtil {
 
         if (StringUtils.isBlank(service)) {
             throw new IllegalArgumentException(
-                    "Service must not be empty"
+                    "Service должен быть заполнен"
             );
         }
 
+        if (tokenRegistryRepository.existsActiveByService(service)) {
+            throw new JwtTokenAlreadyExistsException(service);
+        }
+
         Instant issuedAt = Instant.now();
+
         Instant expiresAt = issuedAt.plus(
                 jwtProperties.getExpirationHours(),
                 ChronoUnit.HOURS
@@ -175,9 +182,7 @@ public class JwtUtil {
     private void validateSecret(String secret) {
 
         if (secret == null) {
-            throw new IllegalStateException(
-                    "Wrong secret"
-            );
+            throw new JwtInvalidSecretException();
         }
 
         boolean valid = MessageDigest.isEqual(
@@ -187,9 +192,7 @@ public class JwtUtil {
         );
 
         if (!valid) {
-            throw new IllegalStateException(
-                    "Wrong secret"
-            );
+            throw new JwtInvalidSecretException();
         }
     }
 }

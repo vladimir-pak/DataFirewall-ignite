@@ -35,7 +35,16 @@ public class JwtController {
     @DeleteMapping("revoke/{service}")
     @SvoiApiLog(functionName = "Revoking JWT")
     public ResponseEntity<String> revokeToken(@PathVariable String service) {
-        jwtUtil.revokeToken(service);
-        return ResponseEntity.ok("Token for service " + service + " revoked");
+        boolean revoked = jwtUtil.revokeToken(service);
+
+        if (!revoked) {
+            return ResponseEntity
+                    .notFound()
+                    .build();
+        }
+
+        return ResponseEntity.ok(
+                "Token for service " + service + " revoked"
+        );
     }
 }

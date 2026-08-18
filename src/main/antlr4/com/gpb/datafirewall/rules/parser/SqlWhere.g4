@@ -38,6 +38,7 @@ predicate
     | value NOT BETWEEN value AND value                 # NotBetweenExpr
     | value BETWEEN value AND value                     # BetweenExpr
     | value REGEXP (STRING | DQIDENT)                   # RegexpExpr
+    | REGEXP_LIKE LPAREN value COMMA (STRING | DQIDENT) RPAREN # RegexpLikeFuncExpr
     | functionCall                                      # FuncPredicateExpr
     ;
 
@@ -105,6 +106,7 @@ AS    : [Aa][Ss];
 CAST  : [Cc][Aa][Ss][Tt];
 LIKE  : [Ll][Ii][Kk][Ee];
 IN    : [Ii][Nn];
+REGEXP_LIKE : [Rr][Ee][Gg][Ee][Xx][Pp] '_' [Ll][Ii][Kk][Ee];
 REGEXP: [Rr][Ee][Gg][Ee][Xx][Pp];
 NULL_ : [Nn][Uu][Ll][Ll];
 

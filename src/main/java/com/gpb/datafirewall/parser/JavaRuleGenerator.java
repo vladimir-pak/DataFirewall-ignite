@@ -4,7 +4,9 @@ import com.gpb.datafirewall.parser.ast.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Генератор Java Source (код Java в String) на основе AST
@@ -32,6 +34,17 @@ public class JavaRuleGenerator {
         sb.append("      throw new java.util.NoSuchElementException(\"Missing field: \" + key);\n");
         sb.append("    }\n");
         sb.append("    return data.get(key);\n");
+        sb.append("  }\n");
+
+        sb.append("  private void requireFields(java.util.Map<String,String> data, String... keys){\n");
+        sb.append("    if(data == null) {\n");
+        sb.append("      throw new java.util.NoSuchElementException(\"Data map is null\");\n");
+        sb.append("    }\n");
+        sb.append("    for(String key : keys){\n");
+        sb.append("      if(!data.containsKey(key)) {\n");
+        sb.append("        throw new java.util.NoSuchElementException(\"Missing field: \" + key);\n");
+        sb.append("      }\n");
+        sb.append("    }\n");
         sb.append("  }\n");
 
         sb.append("  private Double toDoubleOrNull(Object v){\n");
@@ -310,9 +323,26 @@ public class JavaRuleGenerator {
         sb.append("    } catch(Exception e){ return null; }\n");
         sb.append("  }\n");
 
+        Set<String> requiredFields = new LinkedHashSet<>();
+        // Во время генерации Java-выражения одновременно собираем все FieldExpr
+        String condition = genBool(expr, requiredFields);
+
         sb.append("  public boolean apply(java.util.Map<String,String> data){\n");
         sb.append("    try{\n");
-        sb.append("      return ").append(genBool(expr)).append(";\n");
+
+        if (!requiredFields.isEmpty()) {
+            sb.append("      requireFields(data");
+
+            for (String field : requiredFields) {
+                sb.append(",\"")
+                        .append(escapeJava(field))
+                        .append("\"");
+            }
+
+            sb.append(");\n");
+        }
+
+        sb.append("      return ").append(condition).append(";\n");
         sb.append("    } catch(java.util.NoSuchElementException e){\n");
         sb.append("      throw e;\n");
         sb.append("    } catch(Exception e){\n");
@@ -381,12 +411,12 @@ public class JavaRuleGenerator {
         return false;
     }
 
-    private String genBool(Expr e) {
+    private String genBool(Expr e, Set<String> requiredFields) {
         if (e == null) return "false";
 
         if (e instanceof AndExpr ae) {
-            String left = genBool(ae.left);
-            String right = genBool(ae.right);
+            String left = genBool(ae.left, requiredFields);
+            String right = genBool(ae.right, requiredFields);
 
             if ("true".equals(left)) return right;
             if ("true".equals(right)) return left;
@@ -396,8 +426,8 @@ public class JavaRuleGenerator {
         }
 
         if (e instanceof OrExpr oe) {
-            String left = genBool(oe.left);
-            String right = genBool(oe.right);
+            String left = genBool(oe.left, requiredFields);
+            String right = genBool(oe.right, requiredFields);
 
             if ("false".equals(left)) return right;
             if ("false".equals(right)) return left;
@@ -407,7 +437,7 @@ public class JavaRuleGenerator {
         }
 
         if (e instanceof NotExpr ne) {
-            String inner = genBool(ne.expr);
+            String inner = genBool(ne.expr, requiredFields);
 
             if ("true".equals(inner)) return "false";
             if ("false".equals(inner)) return "true";
@@ -424,25 +454,30 @@ public class JavaRuleGenerator {
                 || e instanceof NotInExpr
                 || e instanceof BetweenExpr
                 || e instanceof NotBetweenExpr) {
-            return genExpr(e);
+
+            return genExpr(e, requiredFields);
         }
 
         if (e instanceof FuncExpr f) {
             String fname = f.funcName.toLowerCase(Locale.ROOT);
 
             if (fname.equals("regexp_like")) {
-                return genExpr(e);
+                return genExpr(e, requiredFields);
             }
         }
 
         return "false";
     }
 
-    private String genExpr(Expr e) {
+    private String genExpr(Expr e, Set<String> requiredFields) {
         if (e == null) return "null";
 
         if (e instanceof FieldExpr fe) {
-            return "getField(data,\"" + escapeJava(fe.name) + "\")";
+            requiredFields.add(fe.name);
+
+            return "getField(data,\""
+                    + escapeJava(fe.name)
+                    + "\")";
         }
 
         if (e instanceof StringExpr se) {
@@ -457,24 +492,67 @@ public class JavaRuleGenerator {
             return "intervalToPeriod(\"" + escapeJava(itv.literal) + "\")";
         }
 
-        if (e instanceof AddExpr a) return "add(" + genExpr(a.left) + ", " + genExpr(a.right) + ")";
-        if (e instanceof SubExpr s) return "sub(" + genExpr(s.left) + ", " + genExpr(s.right) + ")";
-        if (e instanceof MulExpr m) return "mul(" + genExpr(m.left) + ", " + genExpr(m.right) + ")";
-        if (e instanceof DivExpr d) return "div(" + genExpr(d.left) + ", " + genExpr(d.right) + ")";
-        if (e instanceof ModExpr m) return "mod(" + genExpr(m.left) + ", " + genExpr(m.right) + ")";
-        if (e instanceof UnaryMinusExpr u) return "sub(0, " + genExpr(u.expr) + ")";
+        if (e instanceof AddExpr a) {
+            return "add("
+                    + genExpr(a.left, requiredFields)
+                    + ", "
+                    + genExpr(a.right, requiredFields)
+                    + ")";
+        }
+
+        if (e instanceof SubExpr s) {
+            return "sub("
+                    + genExpr(s.left, requiredFields)
+                    + ", "
+                    + genExpr(s.right, requiredFields)
+                    + ")";
+        }
+
+        if (e instanceof MulExpr m) {
+            return "mul("
+                    + genExpr(m.left, requiredFields)
+                    + ", "
+                    + genExpr(m.right, requiredFields)
+                    + ")";
+        }
+
+        if (e instanceof DivExpr d) {
+            return "div("
+                    + genExpr(d.left, requiredFields)
+                    + ", "
+                    + genExpr(d.right, requiredFields)
+                    + ")";
+        }
+
+        if (e instanceof ModExpr m) {
+            return "mod("
+                    + genExpr(m.left, requiredFields)
+                    + ", "
+                    + genExpr(m.right, requiredFields)
+                    + ")";
+        }
+
+        if (e instanceof UnaryMinusExpr u) {
+            return "sub(0, "
+                    + genExpr(u.expr, requiredFields)
+                    + ")";
+        }
 
         if (e instanceof CompareExpr ce) {
-            String l = genExpr(ce.left);
-            String r = genExpr(ce.right);
+            String l = genExpr(ce.left, requiredFields);
+            String r = genExpr(ce.right, requiredFields);
 
-            boolean dateLike = isDateLikeExpr(ce.left) || isDateLikeExpr(ce.right);
-            boolean numeric = isNumericExpr(ce.left)
-                    || isNumericExpr(ce.right)
-                    || ce.op.equals(">")
-                    || ce.op.equals("<")
-                    || ce.op.equals(">=")
-                    || ce.op.equals("<=");
+            boolean dateLike =
+                    isDateLikeExpr(ce.left)
+                            || isDateLikeExpr(ce.right);
+
+            boolean numeric =
+                    isNumericExpr(ce.left)
+                            || isNumericExpr(ce.right)
+                            || ce.op.equals(">")
+                            || ce.op.equals("<")
+                            || ce.op.equals(">=")
+                            || ce.op.equals("<=");
 
             if (dateLike) {
                 switch (ce.op) {
@@ -492,7 +570,8 @@ public class JavaRuleGenerator {
                     case "<=":
                         return "dateLe(" + l + "," + r + ")";
                     default:
-                        throw new IllegalStateException("Unknown op: " + ce.op);
+                        throw new IllegalStateException(
+                                "Unknown op: " + ce.op);
                 }
             }
 
@@ -512,45 +591,66 @@ public class JavaRuleGenerator {
                     case "<=":
                         return "numLe(" + l + "," + r + ")";
                     default:
-                        throw new IllegalStateException("Unknown op: " + ce.op);
+                        throw new IllegalStateException(
+                                "Unknown op: " + ce.op);
                 }
             }
 
             switch (ce.op) {
                 case "=":
-                    return "java.util.Objects.equals(" + l + "," + r + ")";
+                    return "java.util.Objects.equals("
+                            + l + "," + r + ")";
                 case "!=":
                 case "<>":
-                    return "(!java.util.Objects.equals(" + l + "," + r + "))";
+                    return "(!java.util.Objects.equals("
+                            + l + "," + r + "))";
                 default:
-                    throw new IllegalStateException("Unsupported op for strings: " + ce.op);
+                    throw new IllegalStateException(
+                            "Unsupported op for strings: " + ce.op);
             }
         }
 
         if (e instanceof IsNullExpr ine) {
-            return "(" + genExpr(ine.expr) + "==null)";
+            return "("
+                    + genExpr(ine.expr, requiredFields)
+                    + "==null)";
         }
 
         if (e instanceof IsNotNullExpr inne) {
-            return "(" + genExpr(inne.expr) + "!=null)";
+            return "("
+                    + genExpr(inne.expr, requiredFields)
+                    + "!=null)";
         }
 
         if (e instanceof LikeExpr le) {
-            String val = genExpr(le.value);
-            return "likeSql(" + val + ",\"" + escapeJava(le.pattern) + "\")";
+            String val = genExpr(le.value, requiredFields);
+
+            return "likeSql("
+                    + val
+                    + ",\""
+                    + escapeJava(le.pattern)
+                    + "\")";
         }
 
         if (e instanceof NotLikeExpr nle) {
-            String val = genExpr(nle.value);
-            return "notLikeSql(" + val + ",\"" + escapeJava(nle.pattern) + "\")";
+            String val = genExpr(nle.value, requiredFields);
+
+            return "notLikeSql("
+                    + val
+                    + ",\""
+                    + escapeJava(nle.pattern)
+                    + "\")";
         }
 
         if (e instanceof InExpr in) {
             StringBuilder sb = new StringBuilder();
-            sb.append("inSql(").append(genExpr(in.value));
+
+            sb.append("inSql(")
+                    .append(genExpr(in.value, requiredFields));
 
             for (Expr option : in.options) {
-                sb.append(",").append(genExpr(option));
+                sb.append(",")
+                        .append(genExpr(option, requiredFields));
             }
 
             sb.append(")");
@@ -559,10 +659,13 @@ public class JavaRuleGenerator {
 
         if (e instanceof NotInExpr nin) {
             StringBuilder sb = new StringBuilder();
-            sb.append("notInSql(").append(genExpr(nin.value));
+
+            sb.append("notInSql(")
+                    .append(genExpr(nin.value, requiredFields));
 
             for (Expr option : nin.options) {
-                sb.append(",").append(genExpr(option));
+                sb.append(",")
+                        .append(genExpr(option, requiredFields));
             }
 
             sb.append(")");
@@ -571,108 +674,194 @@ public class JavaRuleGenerator {
 
         if (e instanceof BetweenExpr be) {
             return "betweenSql("
-                    + genExpr(be.value) + ","
-                    + genExpr(be.from) + ","
-                    + genExpr(be.to)
+                    + genExpr(be.value, requiredFields) + ","
+                    + genExpr(be.from, requiredFields) + ","
+                    + genExpr(be.to, requiredFields)
                     + ")";
         }
 
         if (e instanceof NotBetweenExpr nbe) {
             return "notBetweenSql("
-                    + genExpr(nbe.value) + ","
-                    + genExpr(nbe.from) + ","
-                    + genExpr(nbe.to)
+                    + genExpr(nbe.value, requiredFields) + ","
+                    + genExpr(nbe.from, requiredFields) + ","
+                    + genExpr(nbe.to, requiredFields)
                     + ")";
         }
 
         if (e instanceof FuncExpr f) {
-            String fname = f.funcName.toLowerCase(Locale.ROOT);
+            String fname =
+                    f.funcName.toLowerCase(Locale.ROOT);
 
-            if (fname.equals("substring") || fname.equals("substr")) {
+            if (fname.equals("substring")
+                    || fname.equals("substr")) {
+
                 if (f.args.size() == 2) {
-                    return "substringSql(" + genExpr(f.args.get(0)) + "," + genExpr(f.args.get(1)) + ",2147483647)";
+                    return "substringSql("
+                            + genExpr(f.args.get(0), requiredFields)
+                            + ","
+                            + genExpr(f.args.get(1), requiredFields)
+                            + ",2147483647)";
                 }
+
                 if (f.args.size() == 3) {
-                    return "substringSql(" 
-                            + genExpr(f.args.get(0)) + "," 
-                            + genExpr(f.args.get(1)) + "," 
-                            + genExpr(f.args.get(2)) + ")";
+                    return "substringSql("
+                            + genExpr(f.args.get(0), requiredFields)
+                            + ","
+                            + genExpr(f.args.get(1), requiredFields)
+                            + ","
+                            + genExpr(f.args.get(2), requiredFields)
+                            + ")";
                 }
+
                 return "null";
             }
 
-            if (fname.equals("syslib.utf8_length") || fname.equals("utf8_length") || fname.equals("length")) {
-                return "utf8Length(" + genExpr(f.args.get(0)) + ")";
+            if (fname.equals("syslib.utf8_length")
+                    || fname.equals("utf8_length")
+                    || fname.equals("length")) {
+
+                return "utf8Length("
+                        + genExpr(f.args.get(0), requiredFields)
+                        + ")";
             }
 
             if (fname.equals("regexp_like")) {
-                return "regexp_like(" + genExpr(f.args.get(0)) + "," + genExpr(f.args.get(1)) + ")";
+                return "regexp_like("
+                        + genExpr(f.args.get(0), requiredFields)
+                        + ","
+                        + genExpr(f.args.get(1), requiredFields)
+                        + ")";
             }
 
             if (fname.equals("upper")) {
-                String x = genExpr(f.args.get(0));
-                return "(toStringSafe(" + x + ")==null?null:toStringSafe(" + x + ").toUpperCase(Locale.ROOT))";
+                String x =
+                        genExpr(f.args.get(0), requiredFields);
+
+                return "(toStringSafe("
+                        + x
+                        + ")==null?null:toStringSafe("
+                        + x
+                        + ").toUpperCase(Locale.ROOT))";
             }
 
             if (fname.equals("years_add")) {
-                return "years_add(" + genExpr(f.args.get(0)) + "," + genExpr(f.args.get(1)) + ")";
+                return "years_add("
+                        + genExpr(f.args.get(0), requiredFields)
+                        + ","
+                        + genExpr(f.args.get(1), requiredFields)
+                        + ")";
             }
 
             if (fname.equals("replace")) {
-                return "replace(" + genExpr(f.args.get(0)) + "," + genExpr(f.args.get(1)) + "," + genExpr(f.args.get(2)) + ")";
+                return "replace("
+                        + genExpr(f.args.get(0), requiredFields)
+                        + ","
+                        + genExpr(f.args.get(1), requiredFields)
+                        + ","
+                        + genExpr(f.args.get(2), requiredFields)
+                        + ")";
             }
 
-            if (fname.equals("syslib.utf8_lower") || fname.equals("utf8_lower")) {
-                return "utf8_lower(" + genExpr(f.args.get(0)) + ")";
+            if (fname.equals("syslib.utf8_lower")
+                    || fname.equals("utf8_lower")) {
+
+                return "utf8_lower("
+                        + genExpr(f.args.get(0), requiredFields)
+                        + ")";
             }
 
             if (fname.equals("trim")) {
-                return "trim(" + genExpr(f.args.get(0)) + ")";
+                return "trim("
+                        + genExpr(f.args.get(0), requiredFields)
+                        + ")";
             }
 
             if (fname.equals("concat")) {
-                StringBuilder sb = new StringBuilder("concat(");
+                StringBuilder sb =
+                        new StringBuilder("concat(");
+
                 for (int i = 0; i < f.args.size(); i++) {
-                    if (i > 0) sb.append(",");
-                    sb.append(genExpr(f.args.get(i)));
+                    if (i > 0) {
+                        sb.append(",");
+                    }
+
+                    sb.append(
+                            genExpr(
+                                    f.args.get(i),
+                                    requiredFields
+                            )
+                    );
                 }
+
                 sb.append(")");
                 return sb.toString();
             }
 
             if (fname.equals("coalesce")) {
-                StringBuilder sb = new StringBuilder("coalesce(");
+                StringBuilder sb =
+                        new StringBuilder("coalesce(");
+
                 for (int i = 0; i < f.args.size(); i++) {
-                    if (i > 0) sb.append(",");
-                    sb.append(genExpr(f.args.get(i)));
+                    if (i > 0) {
+                        sb.append(",");
+                    }
+
+                    sb.append(
+                            genExpr(
+                                    f.args.get(i),
+                                    requiredFields
+                            )
+                    );
                 }
+
                 sb.append(")");
                 return sb.toString();
             }
 
-            if (fname.equals("current_date")) return "current_date()";
-            if (fname.equals("now")) return "now()";
+            if (fname.equals("current_date")) {
+                return "current_date()";
+            }
 
-            if (f.args == null || f.args.isEmpty()) throw new IllegalStateException("Unsupported function: " + f.funcName);
-            return "toStringSafe(" + genExpr(f.args.get(0)) + ")";
+            if (fname.equals("now")) {
+                return "now()";
+            }
+
+            if (f.args == null || f.args.isEmpty()) {
+                throw new IllegalStateException(
+                        "Unsupported function: " + f.funcName);
+            }
+
+            return "toStringSafe("
+                    + genExpr(f.args.get(0), requiredFields)
+                    + ")";
         }
 
         if (e instanceof CastExpr c) {
-            String type = c.asType == null ? "" : c.asType.toLowerCase(Locale.ROOT);
-            String inner = genExpr(c.expr);
+            String type =
+                    c.asType == null
+                            ? ""
+                            : c.asType.toLowerCase(Locale.ROOT);
 
-            if (type.equals("int") || type.equals("integer")) {
+            String inner =
+                    genExpr(c.expr, requiredFields);
+
+            if (type.equals("int")
+                    || type.equals("integer")) {
+
                 return "toIntOrNull(" + inner + ")";
             }
 
-            if (type.equals("bigint") || type.equals("long")) {
+            if (type.equals("bigint")
+                    || type.equals("long")) {
+
                 return "toLongOrNull(" + inner + ")";
             }
 
-            if (type.equals("string") 
-                    || type.equals("varchar") 
-                    || type.equals("char") 
+            if (type.equals("string")
+                    || type.equals("varchar")
+                    || type.equals("char")
                     || type.equals("text")) {
+
                 return "castString(" + inner + ")";
             }
 
@@ -683,7 +872,8 @@ public class JavaRuleGenerator {
             return inner;
         }
 
-        throw new IllegalStateException("Unhandled expr type: " + e.getClass());
+        throw new IllegalStateException(
+                "Unhandled expr type: " + e.getClass());
     }
 
     private String escapeJava(String s) {

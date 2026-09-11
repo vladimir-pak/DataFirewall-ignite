@@ -27,6 +27,13 @@ public class JavaRuleGenerator {
 
         sb.append("  private String toStringSafe(Object o){ return o==null?null:o.toString(); }\n");
 
+        sb.append("  private String getField(java.util.Map<String,String> data, String key){\n");
+        sb.append("    if(!data.containsKey(key)) {\n");
+        sb.append("      throw new java.util.NoSuchElementException(\"Missing field: \" + key);\n");
+        sb.append("    }\n");
+        sb.append("    return data.get(key);\n");
+        sb.append("  }\n");
+
         sb.append("  private Double toDoubleOrNull(Object v){\n");
         sb.append("    try { return v==null?null:Double.valueOf(v.toString()); }\n");
         sb.append("    catch(Exception e){ return null; }\n");
@@ -306,7 +313,11 @@ public class JavaRuleGenerator {
         sb.append("  public boolean apply(java.util.Map<String,String> data){\n");
         sb.append("    try{\n");
         sb.append("      return ").append(genBool(expr)).append(";\n");
-        sb.append("    } catch(Exception e){ return false; }\n");
+        sb.append("    } catch(java.util.NoSuchElementException e){\n");
+        sb.append("      throw e;\n");
+        sb.append("    } catch(Exception e){\n");
+        sb.append("      return false;\n");
+        sb.append("    }\n");
         sb.append("  }\n");
 
         sb.append("}\n");
@@ -431,7 +442,7 @@ public class JavaRuleGenerator {
         if (e == null) return "null";
 
         if (e instanceof FieldExpr fe) {
-            return "toStringSafe(data.get(\"" + escapeJava(fe.name) + "\"))";
+            return "getField(data,\"" + escapeJava(fe.name) + "\")";
         }
 
         if (e instanceof StringExpr se) {

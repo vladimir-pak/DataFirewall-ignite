@@ -40,10 +40,20 @@ public class JavaRuleGenerator {
         sb.append("    if(data == null) {\n");
         sb.append("      throw new java.util.NoSuchElementException(\"Data map is null\");\n");
         sb.append("    }\n");
+
         sb.append("    for(String key : keys){\n");
+
+        sb.append("      System.out.println(\n");
+        sb.append("          \"[RULE-INTERNAL] class=\" + getClass().getName()\n");
+        sb.append("          + \" classLoader=\" + getClass().getClassLoader()\n");
+        sb.append("          + \" key=[\" + key + \"]\"\n");
+        sb.append("          + \" contains=\" + data.containsKey(key)\n");
+        sb.append("      );\n");
+
         sb.append("      if(!data.containsKey(key)) {\n");
         sb.append("        throw new java.util.NoSuchElementException(\"Missing field: \" + key);\n");
         sb.append("      }\n");
+
         sb.append("    }\n");
         sb.append("  }\n");
 

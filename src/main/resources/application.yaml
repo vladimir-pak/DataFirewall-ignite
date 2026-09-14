@@ -108,6 +108,7 @@ datafirewall:
   generated-rules:
     enabled: true
     output-dir: ./generated-rules
+    compiler-threads: 4
 
 sync:
   enabled: true

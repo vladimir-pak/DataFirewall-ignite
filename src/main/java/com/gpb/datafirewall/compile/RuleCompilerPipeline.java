@@ -36,24 +36,48 @@ public class RuleCompilerPipeline {
 
     private final ExecutorService pool;
     private final JavaRuleGenerator generator;
+    private final boolean saveGeneratedRules;
     private final Path outputDir;
 
     public RuleCompilerPipeline(int threads) {
-        this(threads, "generated-rules");
+        this(
+                threads,
+                true,
+                "./generated-rules"
+        );
     }
 
-    public RuleCompilerPipeline(int threads, String outputDir) {
+    public RuleCompilerPipeline(
+            int threads,
+            boolean saveGeneratedRules,
+            String outputDir
+    ) {
         int safeThreads = Math.max(1, threads);
+
         this.pool = Executors.newFixedThreadPool(safeThreads);
         this.generator = new JavaRuleGenerator();
+
+        this.saveGeneratedRules = saveGeneratedRules;
         this.outputDir = Path.of(outputDir);
+
+        if (!saveGeneratedRules) {
+            log.info("Saving generated rule sources is disabled");
+            return;
+        }
 
         try {
             Files.createDirectories(this.outputDir);
-            log.info("Generated rules directory: {}", this.outputDir.toAbsolutePath());
+
+            log.info(
+                    "Generated rules directory: {}",
+                    this.outputDir.toAbsolutePath()
+            );
+
         } catch (IOException e) {
             throw new IllegalStateException(
-                    "Cannot create output dir for generated rules: " + this.outputDir.toAbsolutePath(), e
+                    "Cannot create output dir for generated rules: "
+                            + this.outputDir.toAbsolutePath(),
+                    e
             );
         }
     }
@@ -163,13 +187,35 @@ public class RuleCompilerPipeline {
         }
     }
 
-    private void saveJavaSource(String className, String javaSrc) {
+    private void saveJavaSource(
+            String className,
+            String javaSrc
+    ) {
+        if (!saveGeneratedRules) {
+            return;
+        }
+
         try {
-            Path file = outputDir.resolve(className + ".java");
-            Files.writeString(file, javaSrc, StandardCharsets.UTF_8);
-            log.info("Saved generated rule source: {}", file.toAbsolutePath());
+            Path file =
+                    outputDir.resolve(className + ".java");
+
+            Files.writeString(
+                    file,
+                    javaSrc,
+                    StandardCharsets.UTF_8
+            );
+
+            log.info(
+                    "Saved generated rule source: {}",
+                    file.toAbsolutePath()
+            );
+
         } catch (IOException e) {
-            log.error("Failed to save generated Java source for {}", className, e);
+            log.error(
+                    "Failed to save generated Java source for {}",
+                    className,
+                    e
+            );
         }
     }
 

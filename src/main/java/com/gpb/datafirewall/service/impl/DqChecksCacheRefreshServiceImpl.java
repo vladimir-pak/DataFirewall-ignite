@@ -12,6 +12,7 @@ import com.gpb.datafirewall.model.CacheVersionId;
 import com.gpb.datafirewall.model.DqChecks;
 import com.gpb.datafirewall.parser.SqlTextNormalizer;
 import com.gpb.datafirewall.properties.Caches;
+import com.gpb.datafirewall.properties.GeneratedRulesProperties;
 import com.gpb.datafirewall.repository.CacheVersionRepository;
 import com.gpb.datafirewall.repository.DqChecksRepository;
 import org.apache.ignite.client.ClientCache;
@@ -32,6 +33,8 @@ public class DqChecksCacheRefreshServiceImpl {
     private final CacheVersionRepository cacheVersionRepository;
     private final IgniteCacheService igniteCacheService;
     private final KafkaProducerService kafkaProducerService;
+
+    private final GeneratedRulesProperties generatedRulesProperties;
 
     private Map<Integer, String> changedOrNewRulesSql = new LinkedHashMap<>();
     private Set<Integer> deletedRuleIds = new LinkedHashSet<>();
@@ -96,7 +99,11 @@ public class DqChecksCacheRefreshServiceImpl {
             return;
         }
 
-        RuleCompilerPipeline ruleCompiler = new RuleCompilerPipeline(2);
+        RuleCompilerPipeline ruleCompiler = new RuleCompilerPipeline(
+            generatedRulesProperties.getCompilerThreads(),
+            generatedRulesProperties.isEnabled(),
+            generatedRulesProperties.getOutputDir()            
+        );
 
         Map<Integer, String> normalized = this.changedOrNewRulesSql.entrySet().stream()
                 .collect(Collectors.toMap(

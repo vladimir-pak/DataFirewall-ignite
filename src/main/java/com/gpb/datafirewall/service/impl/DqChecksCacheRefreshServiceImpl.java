@@ -12,10 +12,10 @@ import com.gpb.datafirewall.model.CacheVersionId;
 import com.gpb.datafirewall.model.DqChecks;
 import com.gpb.datafirewall.parser.SqlTextNormalizer;
 import com.gpb.datafirewall.properties.Caches;
-import com.gpb.datafirewall.properties.GeneratedRulesProperties;
 import com.gpb.datafirewall.repository.CacheVersionRepository;
 import com.gpb.datafirewall.repository.DqChecksRepository;
 import org.apache.ignite.client.ClientCache;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,7 +34,14 @@ public class DqChecksCacheRefreshServiceImpl {
     private final IgniteCacheService igniteCacheService;
     private final KafkaProducerService kafkaProducerService;
 
-    private final GeneratedRulesProperties generatedRulesProperties;
+    @Value ("${datafirewall.generated-rules.enabled:true}")
+    private boolean generatedRulesEnabled;
+
+    @Value("${datafirewall.generated-rules.output-dir:./generated-rules}")
+    private String generatedRulesOutputDir;
+
+    @Value("${datafirewall.generated-rules.compiler-threads:4}")
+    private int compilerThreads;
 
     private Map<Integer, String> changedOrNewRulesSql = new LinkedHashMap<>();
     private Set<Integer> deletedRuleIds = new LinkedHashSet<>();
@@ -100,9 +107,9 @@ public class DqChecksCacheRefreshServiceImpl {
         }
 
         RuleCompilerPipeline ruleCompiler = new RuleCompilerPipeline(
-            generatedRulesProperties.getCompilerThreads(),
-            generatedRulesProperties.isEnabled(),
-            generatedRulesProperties.getOutputDir()            
+            compilerThreads,
+            generatedRulesEnabled,
+            generatedRulesOutputDir           
         );
 
         Map<Integer, String> normalized = this.changedOrNewRulesSql.entrySet().stream()

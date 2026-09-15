@@ -119,10 +119,47 @@ public class DqChecksCacheRefreshServiceImpl {
                 ));
 
         // 6. Компилируем только новые/изменённые правила
-        Map<String, byte[]> compiledDelta =
-                normalized.isEmpty()
-                        ? Collections.emptyMap()
-                        : ruleCompiler.process(normalized);
+        Map<String, byte[]> compiledDelta;
+
+        try {
+
+            compiledDelta =
+                    normalized.isEmpty()
+                            ? Collections.emptyMap()
+                            : ruleCompiler.process(normalized);
+
+        } finally {
+            ruleCompiler.shutdown();
+        }
+
+        Set<String> expectedRules =
+                normalized.keySet().stream()
+                        .map(id -> "Rule" + id)
+                        .collect(
+                                Collectors.toCollection(
+                                        LinkedHashSet::new
+                                )
+                        );
+
+        Set<String> missingRules =
+                new LinkedHashSet<>(expectedRules);
+
+        missingRules.removeAll(
+                compiledDelta.keySet()
+        );
+
+        if (!missingRules.isEmpty()) {
+
+            log.error(
+                    "Компиляция не завершена для проверки: {}",
+                    missingRules
+            );
+
+            throw new IllegalStateException(
+                    "Ошибка компиляции для проверки: "
+                            + missingRules
+            );
+        }
 
         // 7. Определяем текущую версию compiled_rules из БД
         CacheVersion currentVersionRow =

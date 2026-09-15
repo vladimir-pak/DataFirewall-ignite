@@ -33,7 +33,7 @@ public class JavaRuleGenerator {
         sb.append("    if(!data.containsKey(key)) {\n");
         sb.append("      throw new java.util.NoSuchElementException(\"Missing field: \" + key);\n");
         sb.append("    }\n");
-        sb.append("    return data.get(key);\n");
+        sb.append("    return (String) data.get(key);\n");
         sb.append("  }\n");
 
         sb.append("  private void requireFields(java.util.Map<String,String> data, String... keys){\n");

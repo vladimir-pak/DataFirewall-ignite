@@ -11,6 +11,7 @@ import com.gpb.datafirewall.model.CacheVersion;
 import com.gpb.datafirewall.model.CacheVersionId;
 import com.gpb.datafirewall.model.DqChecks;
 import com.gpb.datafirewall.parser.SqlTextNormalizer;
+import com.gpb.datafirewall.parser.JavaRuleGenerator;
 import com.gpb.datafirewall.properties.Caches;
 import com.gpb.datafirewall.repository.CacheVersionRepository;
 import com.gpb.datafirewall.repository.DqChecksRepository;
@@ -51,11 +52,13 @@ public class DqChecksCacheRefreshServiceImpl {
         // 1. Читаем всю таблицу
         List<DqChecks> rows = dqChecksRepository.findAll();
 
-        // 2. Строим Map<Integer, String> id -> hash(sqlQuery)
+        // 2. Учитываем версию генератора: новый генератор требует нового bytecode,
+        // даже если исходное SQL-выражение не изменилось.
         Map<Integer, String> dbHashes = rows.stream()
                 .collect(Collectors.toMap(
                         DqChecks::getId,
-                        row -> sha256Hex(row.getSqlQuery()),
+                        row -> sha256Hex(JavaRuleGenerator.GENERATOR_VERSION + "\n"
+                                + Objects.toString(row.getSqlQuery(), "")),
                         (a, b) -> b,
                         LinkedHashMap::new
                 ));

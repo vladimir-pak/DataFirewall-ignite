@@ -74,7 +74,7 @@ atom
     | STRING                                     # StringValue
     | functionCall                               # FuncValue
     | CAST LPAREN value AS IDENT RPAREN          # CastValue
-    | EXTRACT LPAREN IDENT FROM value RPAREN     # ExtractValue
+    | EXTRACT LPAREN (IDENT | STRING) FROM value RPAREN # ExtractValue
     | INTERVAL STRING                            # IntervalValue
     | IDENT                                      # IdentValue
     | LPAREN value RPAREN                        # ValueParen

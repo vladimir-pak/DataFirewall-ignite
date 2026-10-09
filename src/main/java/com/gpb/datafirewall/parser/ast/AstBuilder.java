@@ -260,7 +260,9 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
 
     @Override
     public Expr visitExtractValue(SqlWhereParser.ExtractValueContext ctx) {
-        String unit = ctx.IDENT().getText();
+        String unit = ctx.IDENT() != null
+                ? ctx.IDENT().getText()
+                : unquoteSingle(ctx.STRING().getText());
         Expr fromExpr = visit(ctx.value());
         return new FuncExpr("extract", List.of(new StringExpr(unit), fromExpr));
     }

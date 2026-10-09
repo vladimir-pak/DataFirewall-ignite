@@ -7,6 +7,8 @@ import org.slf4j.LoggerFactory;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Генератор Java Source (код Java в String) на основе AST
@@ -14,7 +16,10 @@ import java.util.Set;
  * Важно: Janino НЕ поддерживает switch-expression, поэтому используем if/else.
  */
 public class JavaRuleGenerator {
+    public static final String GENERATOR_VERSION = "2-date-expressions";
     private static final Logger log = LoggerFactory.getLogger(JavaRuleGenerator.class);
+    private static final Pattern INTERVAL_PART = Pattern.compile(
+            "\\G\\s*([+-]?\\d+)\\s+(years?|months?|weeks?|days?)\\b", Pattern.CASE_INSENSITIVE);
 
     public String generate(String className, Expr expr) {
         StringBuilder sb = new StringBuilder();
@@ -137,6 +142,8 @@ public class JavaRuleGenerator {
         sb.append("    return d.plusYears(y.longValue());\n");
         sb.append("  }\n");
 
+        appendDateExpressionHelpers(sb);
+
         sb.append("  private String replace(Object src, Object target, Object replacement){\n");
         sb.append("    String s = toStringSafe(src);\n");
         sb.append("    String t = toStringSafe(target);\n");
@@ -190,15 +197,17 @@ public class JavaRuleGenerator {
         sb.append("  private boolean dateLe(Object a, Object b){ LocalDate da=toDateOrNull(a), db=toDateOrNull(b); return da!=null && db!=null && (da.isBefore(db)||da.isEqual(db)); }\n");
 
         sb.append("  private Object add(Object a, Object b){\n");
-        sb.append("    if(a instanceof LocalDate && b instanceof Period) return ((LocalDate)a).plus((Period)b);\n");
-        sb.append("    if(a instanceof Period && b instanceof LocalDate) return ((LocalDate)b).plus((Period)a);\n");
+        sb.append("    if(a instanceof Period && b instanceof Period) return ((Period)a).plus((Period)b);\n");
+        sb.append("    if(b instanceof Period){ LocalDate d=toDateOrNull(a); return d==null?null:d.plus((Period)b); }\n");
+        sb.append("    if(a instanceof Period){ LocalDate d=toDateOrNull(b); return d==null?null:d.plus((Period)a); }\n");
         sb.append("    Double da=toDoubleOrNull(a), db=toDoubleOrNull(b);\n");
         sb.append("    if(da!=null && db!=null) return da+db;\n");
         sb.append("    return null;\n");
         sb.append("  }\n");
 
         sb.append("  private Object sub(Object a, Object b){\n");
-        sb.append("    if(a instanceof LocalDate && b instanceof Period) return ((LocalDate)a).minus((Period)b);\n");
+        sb.append("    if(a instanceof Period && b instanceof Period) return ((Period)a).minus((Period)b);\n");
+        sb.append("    if(b instanceof Period){ LocalDate d=toDateOrNull(a); return d==null?null:d.minus((Period)b); }\n");
         sb.append("    Double da=toDoubleOrNull(a), db=toDoubleOrNull(b);\n");
         sb.append("    if(da!=null && db!=null) return da-db;\n");
         sb.append("    return null;\n");
@@ -220,21 +229,6 @@ public class JavaRuleGenerator {
         sb.append("    }\n");
         sb.append("    Double da=toDoubleOrNull(a), db=toDoubleOrNull(b);\n");
         sb.append("    if(da!=null && db!=null && db!=0d) return da%db;\n");
-        sb.append("    return null;\n");
-        sb.append("  }\n");
-
-        sb.append("  private Period intervalToPeriod(String lit){\n");
-        sb.append("    if(lit==null) return null;\n");
-        sb.append("    String s = lit.trim().toLowerCase(Locale.ROOT);\n");
-        sb.append("    if(s.isEmpty()) return null;\n");
-        sb.append("    String[] parts = s.split(\"\\\\s+\");\n");
-        sb.append("    if(parts.length < 2) return null;\n");
-        sb.append("    int n; try{ n=Integer.parseInt(parts[0]); } catch(Exception e){ return null; }\n");
-        sb.append("    String unit = parts[1];\n");
-        sb.append("    if(unit.endsWith(\"s\")) unit = unit.substring(0, unit.length()-1);\n");
-        sb.append("    if(\"day\".equals(unit)) return Period.ofDays(n);\n");
-        sb.append("    if(\"month\".equals(unit)) return Period.ofMonths(n);\n");
-        sb.append("    if(\"year\".equals(unit)) return Period.ofYears(n);\n");
         sb.append("    return null;\n");
         sb.append("  }\n");
 
@@ -366,6 +360,123 @@ public class JavaRuleGenerator {
         return sb.toString();
     }
 
+    /** Date-only helpers emitted into every Rule, without extra runtime classes. */
+    private void appendDateExpressionHelpers(StringBuilder sb) {
+        sb.append("""
+                  private Period ageSql(Object endValue, Object startValue){
+                    LocalDate end = toDateOrNull(endValue);
+                    LocalDate start = toDateOrNull(startValue);
+                    if(end==null || start==null) return null;
+                    int sign = end.isBefore(start) ? -1 : 1;
+                    LocalDate earlier = sign < 0 ? end : start;
+                    LocalDate later = sign < 0 ? start : end;
+                    int years = later.getYear() - earlier.getYear();
+                    int months = later.getMonthValue() - earlier.getMonthValue();
+                    int days = later.getDayOfMonth() - earlier.getDayOfMonth();
+                    // PostgreSQL AGE borrows days from the earlier date's month.
+                    if(days < 0){ days += earlier.lengthOfMonth(); months--; }
+                    if(months < 0){ months += 12; years--; }
+                    return Period.of(sign * years, sign * months, sign * days);
+                  }
+                  private Long extractSql(String unit, Object value){
+                    if(value==null) return null;
+                    if(value instanceof Period){
+                      Period p = (Period)value;
+                      long months = p.toTotalMonths();
+                      if("year".equals(unit)) return Long.valueOf(months / 12);
+                      if("month".equals(unit)) return Long.valueOf(months % 12);
+                      if("day".equals(unit)) return Long.valueOf(p.getDays());
+                      throw new IllegalArgumentException("Unsupported EXTRACT unit for interval: " + unit);
+                    }
+                    LocalDate d = toDateOrNull(value);
+                    if(d==null) return null;
+                    if("year".equals(unit)) return Long.valueOf(d.getYear());
+                    if("month".equals(unit)) return Long.valueOf(d.getMonthValue());
+                    if("day".equals(unit)) return Long.valueOf(d.getDayOfMonth());
+                    if("quarter".equals(unit)) return Long.valueOf((d.getMonthValue() - 1) / 3 + 1);
+                    if("dow".equals(unit)) return Long.valueOf(d.getDayOfWeek().getValue() % 7);
+                    if("isodow".equals(unit)) return Long.valueOf(d.getDayOfWeek().getValue());
+                    if("doy".equals(unit)) return Long.valueOf(d.getDayOfYear());
+                    if("week".equals(unit)) return Long.valueOf(d.get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR));
+                    if("isoyear".equals(unit)) return Long.valueOf(d.get(java.time.temporal.IsoFields.WEEK_BASED_YEAR));
+                    throw new IllegalArgumentException("Unsupported EXTRACT unit for date: " + unit);
+                  }
+                  private boolean compareIntervalSql(Object left, String op, Object right){
+                    if(left==null || right==null) return false;
+                    Period a = (Period)left;
+                    Period b = (Period)right;
+                    // PostgreSQL interval comparisons treat a month as 30 days.
+                    int cmp = Long.compare(a.toTotalMonths() * 30 + a.getDays(),
+                                           b.toTotalMonths() * 30 + b.getDays());
+                    if("=".equals(op)) return cmp==0;
+                    if("!=".equals(op) || "<>".equals(op)) return cmp!=0;
+                    if(">".equals(op)) return cmp>0;
+                    if("<".equals(op)) return cmp<0;
+                    if(">=".equals(op)) return cmp>=0;
+                    if("<=".equals(op)) return cmp<=0;
+                    throw new IllegalArgumentException("Unsupported interval comparison: " + op);
+                  }
+                """);
+    }
+
+    private boolean isIntervalExpr(Expr e) {
+        if (e instanceof IntervalExpr) return true;
+        if (e instanceof FuncExpr f) return "age".equalsIgnoreCase(f.funcName);
+        if (e instanceof AddExpr a) return isIntervalExpr(a.left) && isIntervalExpr(a.right);
+        if (e instanceof SubExpr s) return isIntervalExpr(s.left) && isIntervalExpr(s.right);
+        if (e instanceof UnaryMinusExpr u) return isIntervalExpr(u.expr);
+        return false;
+    }
+
+    private void requireArity(FuncExpr f, int min, int max) {
+        int actual = f.args == null ? 0 : f.args.size();
+        if (actual < min || actual > max) {
+            throw new IllegalStateException("Function " + f.funcName + " expects "
+                    + (min == max ? String.valueOf(min) : min + ".." + max)
+                    + " argument(s), got " + actual);
+        }
+    }
+
+    private String extractUnit(Expr expr) {
+        if (expr instanceof StringExpr s) return s.value.trim().toLowerCase(Locale.ROOT);
+        if (expr instanceof IdentExpr i) return i.name.trim().toLowerCase(Locale.ROOT);
+        throw new IllegalStateException("EXTRACT/DATE_PART unit must be a constant");
+    }
+
+    private void validateExtractUnit(String unit, boolean interval) {
+        if (unit.equals("year") || unit.equals("month") || unit.equals("day")) return;
+        if (!interval && (unit.equals("quarter") || unit.equals("dow") || unit.equals("isodow")
+                || unit.equals("doy") || unit.equals("week") || unit.equals("isoyear"))) return;
+        throw new IllegalStateException("Unsupported EXTRACT/DATE_PART unit for "
+                + (interval ? "interval: " : "date: ") + unit);
+    }
+
+    /** Validate literal intervals during generation instead of silently returning null at runtime. */
+    private String genInterval(String literal) {
+        String text = literal == null ? "" : literal.trim();
+        Matcher matcher = INTERVAL_PART.matcher(text);
+        java.time.Period period = java.time.Period.ZERO;
+        int end = 0;
+        try {
+            while (matcher.find()) {
+                int count = Integer.parseInt(matcher.group(1));
+                String unit = matcher.group(2).toLowerCase(Locale.ROOT);
+                if (unit.startsWith("year")) period = period.plusYears(count);
+                else if (unit.startsWith("month")) period = period.plusMonths(count);
+                else if (unit.startsWith("week")) period = period.plusDays(Math.multiplyExact(count, 7));
+                else period = period.plusDays(count);
+                end = matcher.end();
+            }
+        } catch (ArithmeticException | NumberFormatException ex) {
+            throw new IllegalStateException("INTERVAL is out of range: " + literal, ex);
+        }
+        if (end == 0 || end != text.length()) {
+            throw new IllegalStateException("Unsupported INTERVAL: " + literal
+                    + ". Expected integer years, months, weeks or days.");
+        }
+        return "Period.of(" + period.getYears() + "," + period.getMonths() + "," + period.getDays() + ")";
+    }
+
     private boolean isNumericExpr(Expr e) {
         if (e instanceof NumberExpr) return true;
 
@@ -387,7 +498,7 @@ public class JavaRuleGenerator {
                     || fn.equals("utf8_length")
                     || fn.equals("length")
                     || fn.equals("extract")
-                    || fn.equals("age");
+                    || fn.equals("date_part");
         }
 
         return (e instanceof AddExpr)
@@ -401,7 +512,7 @@ public class JavaRuleGenerator {
     private boolean isDateLikeExpr(Expr e) {
         if (e instanceof FuncExpr f) {
             String fn = f.funcName.toLowerCase(Locale.ROOT);
-            if (fn.equals("current_date") || fn.equals("now")) return true;
+            if (fn.equals("current_date") || fn.equals("now") || fn.equals("years_add")) return true;
         }
 
         if (e instanceof CastExpr c) {
@@ -415,14 +526,19 @@ public class JavaRuleGenerator {
             return fe.name.toLowerCase(Locale.ROOT).contains("дата");
         }
 
-        if (e instanceof AddExpr a) return isDateLikeExpr(a.left) || isDateLikeExpr(a.right);
-        if (e instanceof SubExpr s) return isDateLikeExpr(s.left) || isDateLikeExpr(s.right);
+        if (e instanceof AddExpr a) {
+            return !isIntervalExpr(e) && (isDateLikeExpr(a.left) || isDateLikeExpr(a.right)
+                    || isIntervalExpr(a.left) || isIntervalExpr(a.right));
+        }
+        if (e instanceof SubExpr s) {
+            return !isIntervalExpr(e) && (isDateLikeExpr(s.left) || isIntervalExpr(s.right));
+        }
 
         return false;
     }
 
     private String genBool(Expr e, Set<String> requiredFields) {
-        if (e == null) return "false";
+        if (e == null) throw new IllegalStateException("Missing boolean expression");
 
         if (e instanceof AndExpr ae) {
             String left = genBool(ae.left, requiredFields);
@@ -476,7 +592,7 @@ public class JavaRuleGenerator {
             }
         }
 
-        return "false";
+        throw new IllegalStateException("Unsupported boolean expression: " + e.getClass().getSimpleName());
     }
 
     private String genExpr(Expr e, Set<String> requiredFields) {
@@ -499,7 +615,7 @@ public class JavaRuleGenerator {
         }
 
         if (e instanceof IntervalExpr itv) {
-            return "intervalToPeriod(\"" + escapeJava(itv.literal) + "\")";
+            return genInterval(itv.literal);
         }
 
         if (e instanceof AddExpr a) {
@@ -543,6 +659,9 @@ public class JavaRuleGenerator {
         }
 
         if (e instanceof UnaryMinusExpr u) {
+            if (isIntervalExpr(u.expr)) {
+                return "((Period)" + genExpr(u.expr, requiredFields) + ").negated()";
+            }
             return "sub(0, "
                     + genExpr(u.expr, requiredFields)
                     + ")";
@@ -551,6 +670,13 @@ public class JavaRuleGenerator {
         if (e instanceof CompareExpr ce) {
             String l = genExpr(ce.left, requiredFields);
             String r = genExpr(ce.right, requiredFields);
+
+            if (isIntervalExpr(ce.left) || isIntervalExpr(ce.right)) {
+                if (!isIntervalExpr(ce.left) || !isIntervalExpr(ce.right)) {
+                    throw new IllegalStateException("Interval comparison requires two interval expressions");
+                }
+                return "compareIntervalSql(" + l + ",\"" + escapeJava(ce.op) + "\"," + r + ")";
+            }
 
             boolean dateLike =
                     isDateLikeExpr(ce.left)
@@ -702,6 +828,21 @@ public class JavaRuleGenerator {
             String fname =
                     f.funcName.toLowerCase(Locale.ROOT);
 
+            if (fname.equals("age")) {
+                requireArity(f, 1, 2);
+                String end = f.args.size() == 1 ? "current_date()" : genExpr(f.args.get(0), requiredFields);
+                String start = genExpr(f.args.get(f.args.size() - 1), requiredFields);
+                return "ageSql(" + end + "," + start + ")";
+            }
+
+            if (fname.equals("extract") || fname.equals("date_part")) {
+                requireArity(f, 2, 2);
+                String unit = extractUnit(f.args.get(0));
+                validateExtractUnit(unit, isIntervalExpr(f.args.get(1)));
+                return "extractSql(\"" + escapeJava(unit) + "\","
+                        + genExpr(f.args.get(1), requiredFields) + ")";
+            }
+
             if (fname.equals("substring")
                     || fname.equals("substr")) {
 
@@ -829,21 +970,16 @@ public class JavaRuleGenerator {
             }
 
             if (fname.equals("current_date")) {
+                requireArity(f, 0, 0);
                 return "current_date()";
             }
 
             if (fname.equals("now")) {
+                requireArity(f, 0, 0);
                 return "now()";
             }
 
-            if (f.args == null || f.args.isEmpty()) {
-                throw new IllegalStateException(
-                        "Unsupported function: " + f.funcName);
-            }
-
-            return "toStringSafe("
-                    + genExpr(f.args.get(0), requiredFields)
-                    + ")";
+            throw new IllegalStateException("Unsupported function: " + f.funcName);
         }
 
         if (e instanceof CastExpr c) {

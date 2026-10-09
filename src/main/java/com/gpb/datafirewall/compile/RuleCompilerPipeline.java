@@ -6,11 +6,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.*;
 
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
-import org.antlr.v4.runtime.DiagnosticErrorListener;
+import org.antlr.v4.runtime.BaseErrorListener;
+import org.antlr.v4.runtime.RecognitionException;
+import org.antlr.v4.runtime.Recognizer;
 
 import com.gpb.datafirewall.parser.JavaRuleGenerator;
 import com.gpb.datafirewall.parser.ast.AstBuilder;
@@ -38,6 +42,11 @@ public class RuleCompilerPipeline {
     private final JavaRuleGenerator generator;
     private final boolean saveGeneratedRules;
     private final Path outputDir;
+    private final Map<Integer, String> compilationErrors = new ConcurrentHashMap<>();
+
+    public Map<Integer, String> getCompilationErrors() {
+        return Map.copyOf(compilationErrors);
+    }
 
     public RuleCompilerPipeline(int threads) {
         this(
@@ -86,7 +95,8 @@ public class RuleCompilerPipeline {
      * Компилирует набор правил (id -> sql) в Map (className -> bytecode).
      * Ошибочные правила пропускаются, остальные возвращаются.
      */
-    public Map<String, byte[]> process(Map<Integer, String> rulesSql) {
+    public synchronized Map<String, byte[]> process(Map<Integer, String> rulesSql) {
+        compilationErrors.clear();
         if (rulesSql == null || rulesSql.isEmpty()) {
             return Map.of();
         }
@@ -117,8 +127,13 @@ public class RuleCompilerPipeline {
 
                 result.putAll(compiled);
                 ok++;
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                futures.values().forEach(future -> future.cancel(true));
+                throw new IllegalStateException("Rule compilation interrupted", ex);
             } catch (Exception ex) {
                 failed++;
+                compilationErrors.put(ruleId, errorMessage(ex));
                 log.error("Rule {} failed (future/get). Skipping.", ruleId, ex);
             }
         }
@@ -143,6 +158,7 @@ public class RuleCompilerPipeline {
 
         try {
             if (sql == null || sql.isBlank()) {
+                compilationErrors.put(id, "Empty SQL expression");
                 log.warn("Rule {} has empty SQL. Skipping.", id);
                 return Map.of();
             }
@@ -153,15 +169,26 @@ public class RuleCompilerPipeline {
             SqlWhereLexer lexer = new SqlWhereLexer(CharStreams.fromString(sql));
             SqlWhereParser parser = new SqlWhereParser(new CommonTokenStream(lexer));
 
+            List<String> parseErrors = new ArrayList<>();
+            BaseErrorListener errors = new BaseErrorListener() {
+                @Override
+                public void syntaxError(Recognizer<?, ?> recognizer, Object symbol, int line,
+                                        int column, String message, RecognitionException exception) {
+                    parseErrors.add("line " + line + ":" + column + " " + message);
+                }
+            };
+            lexer.removeErrorListeners();
+            lexer.addErrorListener(errors);
             parser.removeErrorListeners();
-            parser.addErrorListener(new DiagnosticErrorListener());
+            parser.addErrorListener(errors);
 
             SqlWhereParser.ParseContext tree = parser.parse();
             int syntaxErrors = parser.getNumberOfSyntaxErrors();
             log.info("Rule {} syntax errors: {}", id, syntaxErrors);
 
-            if (syntaxErrors > 0) {
-                log.warn("Rule {} has {} syntax errors. Skipping compilation.", id, syntaxErrors);
+            if (!parseErrors.isEmpty() || syntaxErrors > 0) {
+                compilationErrors.put(id, "SQL syntax: " + String.join("; ", parseErrors));
+                log.warn("Rule {} has SQL syntax errors: {}. Skipping compilation.", id, parseErrors);
                 return Map.of();
             }
 
@@ -182,9 +209,15 @@ public class RuleCompilerPipeline {
             return out;
 
         } catch (Exception ex) {
+            compilationErrors.put(id, errorMessage(ex));
             log.error("Error processing rule {} with SQL: {}. Skipping rule.", id, sql, ex);
             return Map.of();
         }
+    }
+
+    private String errorMessage(Throwable error) {
+        while (error.getCause() != null) error = error.getCause();
+        return error.getClass().getSimpleName() + ": " + error.getMessage();
     }
 
     private void saveJavaSource(

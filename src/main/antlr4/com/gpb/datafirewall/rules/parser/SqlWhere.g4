@@ -72,6 +72,7 @@ atom
     : DQIDENT                                    # FieldValue
     | NUMBER                                     # NumberValue
     | STRING                                     # StringValue
+    | NULL_                                      # NullValue
     | functionCall                               # FuncValue
     | CAST LPAREN value AS IDENT RPAREN          # CastValue
     | EXTRACT LPAREN (IDENT | STRING) FROM value RPAREN # ExtractValue

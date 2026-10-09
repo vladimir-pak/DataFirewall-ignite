@@ -67,7 +67,7 @@ public class DqChecksCacheRefreshServiceImpl {
         Map<Integer, String> dbSqlById = rows.stream()
                 .collect(Collectors.toMap(
                         DqChecks::getId,
-                        DqChecks::getSqlQuery,
+                        row -> Objects.toString(row.getSqlQuery(), ""),
                         (a, b) -> b,
                         LinkedHashMap::new
                 ));
@@ -115,11 +115,8 @@ public class DqChecksCacheRefreshServiceImpl {
             generatedRulesOutputDir           
         );
 
-        Map<Integer, String> normalized = this.changedOrNewRulesSql.entrySet().stream()
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        e -> SqlTextNormalizer.normalize(e.getValue())
-                ));
+        Map<Integer, String> normalized = new LinkedHashMap<>();
+        this.changedOrNewRulesSql.forEach((id, sql) -> normalized.put(id, SqlTextNormalizer.normalize(sql)));
 
         // 6. Компилируем только новые/изменённые правила
         Map<String, byte[]> compiledDelta;
@@ -161,6 +158,7 @@ public class DqChecksCacheRefreshServiceImpl {
             throw new IllegalStateException(
                     "Ошибка компиляции для проверки: "
                             + missingRules
+                            + ". Причины: " + new TreeMap<>(ruleCompiler.getCompilationErrors())
             );
         }
 
@@ -192,8 +190,6 @@ public class DqChecksCacheRefreshServiceImpl {
                 newCompiledCache.putAll(previousSnapshot);
             }
         }
-
-        ruleCompiler.shutdown();
 
         // накатываем изменения
         if (!compiledDelta.isEmpty()) {

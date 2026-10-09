@@ -1,36 +1,36 @@
 package com.gpb.datafirewall.parser;
 
-import java.util.regex.Pattern;
-
+/** Normalize copied SQL outside literals and quoted field names only. */
 public final class SqlTextNormalizer {
-
-    private static final Pattern INVISIBLE = Pattern.compile("[\\u00A0\\u200B\\uFEFF]"); // NBSP, ZWSP, BOM
-    private static final Pattern MULTISPACE = Pattern.compile("[ \\t]{2,}");
-
     private SqlTextNormalizer() {}
 
     public static String normalize(String sql) {
         if (sql == null) return null;
-
-        String s = sql;
-
-        // невидимые символы и переносы
-        s = INVISIBLE.matcher(s).replaceAll(" ");
-        s = s.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ');
-
-        // частая проблема копипаста: ""ДУЛ... -> "ДУЛ...
-        s = s.replaceAll("(^|[^\\\"])\"\"([A-Za-zА-Яа-яЁё_])", "$1\"$2");
-
-        // AND( / OR( / NOT(
-        s = s.replaceAll("\\b(AND|OR|NOT)\\(", "$1 (");
-
-        // "Номер"is -> "Номер" is
-        s = s.replaceAll("\"\\s*(is|IS|like|LIKE|in|IN|and|AND|or|OR|not|NOT)\\b", "\" $1");
-        s = s.replaceAll("\"(is|IS|like|LIKE|in|IN)\\b", "\" $1");
-
-        // лишние пробелы
-        s = MULTISPACE.matcher(s).replaceAll(" ");
-
-        return s.trim();
+        StringBuilder out = new StringBuilder();
+        char quote = 0;
+        for (int i = 0; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            if (quote != 0) {
+                out.append(c);
+                if (c == '\\' && i + 1 < sql.length()) {
+                    out.append(sql.charAt(++i));
+                } else if (c == quote) {
+                    if (quote == '\'' && i + 1 < sql.length() && sql.charAt(i + 1) == '\'') {
+                        out.append(sql.charAt(++i));
+                    } else quote = 0;
+                }
+                continue;
+            }
+            // Retain the existing copy/paste repair for an extra opening quote.
+            if (c == '"' && i + 2 < sql.length() && sql.charAt(i + 1) == '"'
+                    && (Character.isLetter(sql.charAt(i + 2)) || sql.charAt(i + 2) == '_')) i++;
+            if (c == '\'' || c == '"') {
+                quote = c;
+                out.append(c);
+            } else if (Character.isWhitespace(c) || c == '\u00A0' || c == '\u200B' || c == '\uFEFF') {
+                if (out.length() > 0 && out.charAt(out.length() - 1) != ' ') out.append(' ');
+            } else out.append(c);
+        }
+        return out.toString().trim();
     }
 }

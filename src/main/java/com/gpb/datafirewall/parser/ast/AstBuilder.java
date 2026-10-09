@@ -247,6 +247,11 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
     }
 
     @Override
+    public Expr visitNullValue(SqlWhereParser.NullValueContext ctx) {
+        return new NullExpr();
+    }
+
+    @Override
     public Expr visitFuncValue(SqlWhereParser.FuncValueContext ctx) {
         return visit(ctx.functionCall());
     }

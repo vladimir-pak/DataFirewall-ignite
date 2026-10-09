@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * Важно: Janino НЕ поддерживает switch-expression, поэтому используем if/else.
  */
 public class JavaRuleGenerator {
-    public static final String GENERATOR_VERSION = "2-date-expressions";
+    public static final String GENERATOR_VERSION = "3-typed-functions";
     private static final Logger log = LoggerFactory.getLogger(JavaRuleGenerator.class);
     private static final Pattern INTERVAL_PART = Pattern.compile(
             "\\G\\s*([+-]?\\d+)\\s+(years?|months?|weeks?|days?)\\b", Pattern.CASE_INSENSITIVE);
@@ -105,7 +105,7 @@ public class JavaRuleGenerator {
         sb.append("    else if(start < 0) from = s.length() + start;\n");
         sb.append("    else from = 0;\n");
         sb.append("    if(from < 0 || from >= s.length()) return \"\";\n");
-        sb.append("    int to = Math.min(from + len, s.length());\n");
+        sb.append("    int to = (int)Math.min((long)from + len, (long)s.length());\n");
         sb.append("    return s.substring(from, to);\n");
         sb.append("  }\n");
 
@@ -118,7 +118,11 @@ public class JavaRuleGenerator {
 
         sb.append("  private LocalDate toDateOrNull(Object v){\n");
         sb.append("    if(v==null) return null;\n");
-        sb.append("    String s = v.toString();\n");
+        sb.append("    if(v instanceof LocalDate) return (LocalDate)v;\n");
+        sb.append("    if(v instanceof LocalDateTime) return ((LocalDateTime)v).toLocalDate();\n");
+        sb.append("    if(v instanceof OffsetDateTime) return ((OffsetDateTime)v).toLocalDate();\n");
+        sb.append("    if(v instanceof ZonedDateTime) return ((ZonedDateTime)v).toLocalDate();\n");
+        sb.append("    String s = v.toString().replace(' ', 'T');\n");
         sb.append("    if(s==null) return null;\n");
         sb.append("    s = s.trim();\n");
         sb.append("    if(s.isEmpty()) return null;\n");
@@ -143,6 +147,7 @@ public class JavaRuleGenerator {
         sb.append("  }\n");
 
         appendDateExpressionHelpers(sb);
+        appendSqlFunctionHelpers(sb);
 
         sb.append("  private String replace(Object src, Object target, Object replacement){\n");
         sb.append("    String s = toStringSafe(src);\n");
@@ -173,10 +178,10 @@ public class JavaRuleGenerator {
         sb.append("    return sb.toString();\n");
         sb.append("  }\n");
 
-        sb.append("  private String coalesce(Object... args){\n");
+        sb.append("  private Object coalesce(Object... args){\n");
         sb.append("    if(args!=null){\n");
         sb.append("      for(Object a : args){\n");
-        sb.append("        if(a!=null) return toStringSafe(a);\n");
+        sb.append("        if(a!=null) return a;\n");
         sb.append("      }\n");
         sb.append("    }\n");
         sb.append("    return null;\n");
@@ -198,8 +203,8 @@ public class JavaRuleGenerator {
 
         sb.append("  private Object add(Object a, Object b){\n");
         sb.append("    if(a instanceof Period && b instanceof Period) return ((Period)a).plus((Period)b);\n");
-        sb.append("    if(b instanceof Period){ LocalDate d=toDateOrNull(a); return d==null?null:d.plus((Period)b); }\n");
-        sb.append("    if(a instanceof Period){ LocalDate d=toDateOrNull(b); return d==null?null:d.plus((Period)a); }\n");
+        sb.append("    if(b instanceof Period){ if(a instanceof LocalDateTime) return ((LocalDateTime)a).plus((Period)b); if(a instanceof ZonedDateTime) return ((ZonedDateTime)a).plus((Period)b); LocalDate d=toDateOrNull(a); return d==null?null:d.plus((Period)b); }\n");
+        sb.append("    if(a instanceof Period){ if(b instanceof LocalDateTime) return ((LocalDateTime)b).plus((Period)a); if(b instanceof ZonedDateTime) return ((ZonedDateTime)b).plus((Period)a); LocalDate d=toDateOrNull(b); return d==null?null:d.plus((Period)a); }\n");
         sb.append("    Double da=toDoubleOrNull(a), db=toDoubleOrNull(b);\n");
         sb.append("    if(da!=null && db!=null) return da+db;\n");
         sb.append("    return null;\n");
@@ -207,7 +212,7 @@ public class JavaRuleGenerator {
 
         sb.append("  private Object sub(Object a, Object b){\n");
         sb.append("    if(a instanceof Period && b instanceof Period) return ((Period)a).minus((Period)b);\n");
-        sb.append("    if(b instanceof Period){ LocalDate d=toDateOrNull(a); return d==null?null:d.minus((Period)b); }\n");
+        sb.append("    if(b instanceof Period){ if(a instanceof LocalDateTime) return ((LocalDateTime)a).minus((Period)b); if(a instanceof ZonedDateTime) return ((ZonedDateTime)a).minus((Period)b); LocalDate d=toDateOrNull(a); return d==null?null:d.minus((Period)b); }\n");
         sb.append("    Double da=toDoubleOrNull(a), db=toDoubleOrNull(b);\n");
         sb.append("    if(da!=null && db!=null) return da-db;\n");
         sb.append("    return null;\n");
@@ -272,7 +277,7 @@ public class JavaRuleGenerator {
         sb.append("  private boolean inSql(Object value, Object... options){\n");
         sb.append("    if(value==null || options==null) return false;\n");
         sb.append("    for(Object option : options){\n");
-        sb.append("      if(option!=null && java.util.Objects.equals(value, option)) return true;\n");
+        sb.append("      if(option!=null && sqlEquals(value, option)) return true;\n");
         sb.append("    }\n");
         sb.append("    return false;\n");
         sb.append("  }\n");
@@ -285,7 +290,7 @@ public class JavaRuleGenerator {
         sb.append("        hasNullOption = true;\n");
         sb.append("        continue;\n");
         sb.append("      }\n");
-        sb.append("      if(java.util.Objects.equals(value, option)) return false;\n");
+        sb.append("      if(sqlEquals(value, option)) return false;\n");
         sb.append("    }\n");
         sb.append("    if(hasNullOption) return false;\n");
         sb.append("    return true;\n");
@@ -293,6 +298,13 @@ public class JavaRuleGenerator {
 
         sb.append("  private boolean betweenSql(Object value, Object from, Object to){\n");
         sb.append("    if(value==null || from==null || to==null) return false;\n");
+        sb.append("    if(value instanceof Period || from instanceof Period || to instanceof Period){\n");
+        sb.append("      if(!(value instanceof Period) || !(from instanceof Period) || !(to instanceof Period)) return false;\n");
+        sb.append("      long v=intervalDays((Period)value); return v>=intervalDays((Period)from) && v<=intervalDays((Period)to);\n");
+        sb.append("    }\n");
+        sb.append("    if(isTimestampObject(value) || isTimestampObject(from) || isTimestampObject(to)){\n");
+        sb.append("      return timestampCompare(value,\">=\",from) && timestampCompare(value,\"<=\",to);\n");
+        sb.append("    }\n");
         sb.append("    Double v = toDoubleOrNull(value);\n");
         sb.append("    Double f = toDoubleOrNull(from);\n");
         sb.append("    Double t = toDoubleOrNull(to);\n");
@@ -378,7 +390,7 @@ public class JavaRuleGenerator {
                     if(months < 0){ months += 12; years--; }
                     return Period.of(sign * years, sign * months, sign * days);
                   }
-                  private Long extractSql(String unit, Object value){
+                  private Number extractSql(String unit, Object value){
                     if(value==null) return null;
                     if(value instanceof Period){
                       Period p = (Period)value;
@@ -388,8 +400,22 @@ public class JavaRuleGenerator {
                       if("day".equals(unit)) return Long.valueOf(p.getDays());
                       throw new IllegalArgumentException("Unsupported EXTRACT unit for interval: " + unit);
                     }
+                    if(isTimestampObject(value)){
+                      LocalDateTime t = toTimestampOrNull(value);
+                      if("hour".equals(unit)) return Long.valueOf(t.getHour());
+                      if("minute".equals(unit)) return Long.valueOf(t.getMinute());
+                      if("second".equals(unit)) return Double.valueOf(t.getSecond()+t.getNano()/1000000000d);
+                      if("milliseconds".equals(unit)) return Double.valueOf(t.getSecond()*1000d+t.getNano()/1000000d);
+                      if("microseconds".equals(unit)) return Double.valueOf(t.getSecond()*1000000d+t.getNano()/1000d);
+                      if("epoch".equals(unit)) {
+                        if(value instanceof LocalDateTime) return Double.valueOf(t.toEpochSecond(ZoneOffset.UTC)+t.getNano()/1000000000d);
+                        Instant instant=timestampInstant(value);
+                        return Double.valueOf(instant.getEpochSecond()+instant.getNano()/1000000000d);
+                      }
+                    }
                     LocalDate d = toDateOrNull(value);
                     if(d==null) return null;
+                    if("epoch".equals(unit)) return Long.valueOf(d.toEpochDay()*86400L);
                     if("year".equals(unit)) return Long.valueOf(d.getYear());
                     if("month".equals(unit)) return Long.valueOf(d.getMonthValue());
                     if("day".equals(unit)) return Long.valueOf(d.getDayOfMonth());
@@ -406,8 +432,7 @@ public class JavaRuleGenerator {
                     Period a = (Period)left;
                     Period b = (Period)right;
                     // PostgreSQL interval comparisons treat a month as 30 days.
-                    int cmp = Long.compare(a.toTotalMonths() * 30 + a.getDays(),
-                                           b.toTotalMonths() * 30 + b.getDays());
+                    int cmp = Long.compare(intervalDays(a), intervalDays(b));
                     if("=".equals(op)) return cmp==0;
                     if("!=".equals(op) || "<>".equals(op)) return cmp!=0;
                     if(">".equals(op)) return cmp>0;
@@ -419,9 +444,270 @@ public class JavaRuleGenerator {
                 """);
     }
 
+    private void appendSqlFunctionHelpers(StringBuilder sb) {
+        sb.append("  private Period negateInterval(Object value){\n");
+        sb.append("    return value==null ? null : ((Period)value).negated();\n");
+        sb.append("  }\n");
+        sb.append("  private long intervalDays(Period value){\n");
+        sb.append("    return value.toTotalMonths() * 30L + value.getDays();\n");
+        sb.append("  }\n");
+        sb.append("  private LocalDateTime toTimestampOrNull(Object value){\n");
+        sb.append("    if(value==null) return null;\n");
+        sb.append("    if(value instanceof LocalDateTime) return (LocalDateTime)value;\n");
+        sb.append("    if(value instanceof LocalDate) return ((LocalDate)value).atStartOfDay();\n");
+        sb.append("    if(value instanceof Instant) return LocalDateTime.ofInstant((Instant)value, ZoneId.systemDefault());\n");
+        sb.append("    if(value instanceof OffsetDateTime) return LocalDateTime.ofInstant(((OffsetDateTime)value).toInstant(),ZoneId.systemDefault());\n");
+        sb.append("    if(value instanceof ZonedDateTime) return LocalDateTime.ofInstant(((ZonedDateTime)value).toInstant(),ZoneId.systemDefault());\n");
+        sb.append("    String s=value.toString().trim().replace(' ', 'T');\n");
+        sb.append("    try { return LocalDateTime.parse(s); } catch(DateTimeException ex) {}\n");
+        sb.append("    try { return LocalDateTime.ofInstant(OffsetDateTime.parse(s).toInstant(),ZoneId.systemDefault()); } catch(DateTimeException ex) {}\n");
+        sb.append("    try { return LocalDate.parse(s).atStartOfDay(); } catch(DateTimeException ex) { return null; }\n");
+        sb.append("  }\n");
+        sb.append("  private ZonedDateTime timestampSql(Object value, String pattern){\n");
+        sb.append("    if(value==null) return null;\n");
+        sb.append("    if(pattern==null){\n");
+        sb.append("      Double seconds=toDoubleOrNull(value);\n");
+        sb.append("      if(seconds==null){\n");
+        sb.append("        if(isTimestampObject(value)){ Instant instant=timestampInstant(value); return instant==null?null:instant.atZone(ZoneId.systemDefault()); }\n");
+        sb.append("        try { return OffsetDateTime.parse(value.toString().trim().replace(' ', 'T')).toInstant().atZone(ZoneId.systemDefault()); } catch(DateTimeException ex) {}\n");
+        sb.append("        LocalDateTime t=toTimestampOrNull(value); return t==null?null:t.atZone(ZoneId.systemDefault());\n");
+        sb.append("      }\n");
+        sb.append("      if(!Double.isFinite(seconds.doubleValue())) return null;\n");
+        sb.append("      long whole=(long)Math.floor(seconds.doubleValue());\n");
+        sb.append("      long nanos=Math.round((seconds.doubleValue()-whole)*1000000000d);\n");
+        sb.append("      try { return Instant.ofEpochSecond(whole,nanos).atZone(ZoneId.systemDefault()); }\n");
+        sb.append("      catch(DateTimeException ex){ return null; }\n");
+        sb.append("    }\n");
+        sb.append("    try {\n");
+        sb.append("      DateTimeFormatterBuilder builder=new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern(pattern)\n");
+        sb.append("        .parseDefaulting(java.time.temporal.ChronoField.YEAR,1970)\n");
+        sb.append("        .parseDefaulting(java.time.temporal.ChronoField.MONTH_OF_YEAR,1)\n");
+        sb.append("        .parseDefaulting(java.time.temporal.ChronoField.DAY_OF_MONTH,1)\n");
+        sb.append("        .parseDefaulting(java.time.temporal.ChronoField.MINUTE_OF_HOUR,0)\n");
+        sb.append("        .parseDefaulting(java.time.temporal.ChronoField.SECOND_OF_MINUTE,0);\n");
+        sb.append("      if(pattern.indexOf('h')<0) builder.parseDefaulting(java.time.temporal.ChronoField.HOUR_OF_DAY,0);\n");
+        sb.append("      DateTimeFormatter formatter=builder.toFormatter(Locale.ENGLISH).withResolverStyle(ResolverStyle.STRICT);\n");
+        sb.append("      java.time.temporal.TemporalAccessor parsed=formatter.parse(value.toString().trim());\n");
+        sb.append("      if(parsed.isSupported(java.time.temporal.ChronoField.OFFSET_SECONDS)){\n");
+        sb.append("        return OffsetDateTime.from(parsed).toInstant().atZone(ZoneId.systemDefault());\n");
+        sb.append("      }\n");
+        sb.append("      return LocalDateTime.from(parsed).atZone(ZoneId.systemDefault());\n");
+        sb.append("    } catch(DateTimeException ex){ return null; }\n");
+        sb.append("  }\n");
+        sb.append("  private boolean timestampCompare(Object a, String op, Object b){\n");
+        sb.append("    LocalDateTime left=toTimestampOrNull(a), right=toTimestampOrNull(b);\n");
+        sb.append("    if(left==null || right==null) return false;\n");
+        sb.append("    int cmp;\n");
+        sb.append("    if(a instanceof ZonedDateTime || a instanceof OffsetDateTime || a instanceof Instant\n");
+        sb.append("        || b instanceof ZonedDateTime || b instanceof OffsetDateTime || b instanceof Instant){\n");
+        sb.append("      cmp=timestampInstant(a).compareTo(timestampInstant(b));\n");
+        sb.append("    } else cmp=left.compareTo(right);\n");
+        sb.append("    if(\"=\".equals(op)) return cmp==0;\n");
+        sb.append("    if(\"!=\".equals(op)||\"<>\".equals(op)) return cmp!=0;\n");
+        sb.append("    if(\">\".equals(op)) return cmp>0;\n");
+        sb.append("    if(\"<\".equals(op)) return cmp<0;\n");
+        sb.append("    if(\">=\".equals(op)) return cmp>=0;\n");
+        sb.append("    if(\"<=\".equals(op)) return cmp<=0;\n");
+        sb.append("    throw new IllegalArgumentException(\"Unsupported timestamp comparison: \"+op);\n");
+        sb.append("  }\n");
+        sb.append("  private boolean isTimestampObject(Object value){\n");
+        sb.append("    return value instanceof LocalDateTime || value instanceof ZonedDateTime || value instanceof OffsetDateTime || value instanceof Instant;\n");
+        sb.append("  }\n");
+        sb.append("  private Instant timestampInstant(Object value){\n");
+        sb.append("    if(value instanceof Instant) return (Instant)value;\n");
+        sb.append("    if(value instanceof ZonedDateTime) return ((ZonedDateTime)value).toInstant();\n");
+        sb.append("    if(value instanceof OffsetDateTime) return ((OffsetDateTime)value).toInstant();\n");
+        sb.append("    LocalDateTime t=toTimestampOrNull(value);\n");
+        sb.append("    return t==null?null:t.atZone(ZoneId.systemDefault()).toInstant();\n");
+        sb.append("  }\n");
+        sb.append("  private boolean sqlEquals(Object left, Object right){\n");
+        sb.append("    if(left instanceof Period || right instanceof Period){\n");
+        sb.append("      return left instanceof Period && right instanceof Period\n");
+        sb.append("        && intervalDays((Period)left)==intervalDays((Period)right);\n");
+        sb.append("    }\n");
+        sb.append("    if(isTimestampObject(left) || isTimestampObject(right)){\n");
+        sb.append("      return timestampCompare(left,\"=\",right);\n");
+        sb.append("    }\n");
+        sb.append("    if(left instanceof LocalDate || right instanceof LocalDate){\n");
+        sb.append("      return dateEq(left,right);\n");
+        sb.append("    }\n");
+        sb.append("    return java.util.Objects.equals(left,right);\n");
+        sb.append("  }\n");
+        sb.append("  private String utf8Substring(Object src, Object startObj, Object lenObj){\n");
+        sb.append("    String s=toStringSafe(src);\n");
+        sb.append("    Integer start=toIntOrNull(startObj), len=toIntOrNull(lenObj);\n");
+        sb.append("    if(s==null || start==null || len==null) return null;\n");
+        sb.append("    if(len.intValue()<=0) return \"\";\n");
+        sb.append("    int count=s.codePointCount(0,s.length());\n");
+        sb.append("    long from=start.intValue()>0 ? (long)start.intValue()-1 : start.intValue()<0 ? (long)count+start.intValue() : 0;\n");
+        sb.append("    if(from<0 || from>=count) return \"\";\n");
+        sb.append("    int to=(int)Math.min(from+len.intValue(),(long)count);\n");
+        sb.append("    return s.substring(s.offsetByCodePoints(0,(int)from),s.offsetByCodePoints(0,to));\n");
+        sb.append("  }\n");
+        sb.append("  private String btrimSql(Object value, Object characters){\n");
+        sb.append("    String s=toStringSafe(value), chars=toStringSafe(characters);\n");
+        sb.append("    if(s==null || chars==null) return null;\n");
+        sb.append("    int from=0, to=s.length();\n");
+        sb.append("    while(from<to){\n");
+        sb.append("      int cp=s.codePointAt(from);\n");
+        sb.append("      if(chars.indexOf(cp)<0) break;\n");
+        sb.append("      from+=Character.charCount(cp);\n");
+        sb.append("    }\n");
+        sb.append("    while(to>from){\n");
+        sb.append("      int cp=s.codePointBefore(to);\n");
+        sb.append("      if(chars.indexOf(cp)<0) break;\n");
+        sb.append("      to-=Character.charCount(cp);\n");
+        sb.append("    }\n");
+        sb.append("    return s.substring(from,to);\n");
+        sb.append("  }\n");
+        sb.append("  private Double absSql(Object value){\n");
+        sb.append("    Double n=toDoubleOrNull(value);\n");
+        sb.append("    return n==null ? null : Double.valueOf(Math.abs(n.doubleValue()));\n");
+        sb.append("  }\n");
+        sb.append("  private String postgresRegex(String pattern){\n");
+        sb.append("    String[] classes={\"alnum\",\"alpha\",\"ascii\",\"blank\",\"cntrl\",\"digit\",\"graph\",\"lower\",\"print\",\"punct\",\"space\",\"upper\",\"xdigit\"};\n");
+        sb.append("    String[] names={\"Alnum\",\"Alpha\",\"ASCII\",\"Blank\",\"Cntrl\",\"Digit\",\"Graph\",\"Lower\",\"Print\",\"Punct\",\"Space\",\"Upper\",\"XDigit\"};\n");
+        sb.append("    String out=pattern;\n");
+        sb.append("    for(int i=0;i<classes.length;i++) out=out.replace(\"[:\"+classes[i]+\":]\",\"\\\\p{\"+names[i]+\"}\");\n");
+        sb.append("    out=out.replace(\"\\\\m\",\"(?<!\\\\w)(?=\\\\w)\").replace(\"\\\\M\",\"(?<=\\\\w)(?!\\\\w)\");\n");
+        sb.append("    return out.replace(\"\\\\y\",\"\\\\b\").replace(\"\\\\Y\",\"\\\\B\");\n");
+        sb.append("  }\n");
+        sb.append("  private String regexReplacement(java.util.regex.Matcher match, String replacement){\n");
+        sb.append("    StringBuilder out=new StringBuilder();\n");
+        sb.append("    for(int i=0;i<replacement.length();i++){\n");
+        sb.append("      char c=replacement.charAt(i);\n");
+        sb.append("      if(c=='\\\\' && i+1<replacement.length()){\n");
+        sb.append("        char next=replacement.charAt(++i);\n");
+        sb.append("        if(next>='1' && next<='9'){\n");
+        sb.append("          int group=next-'0';\n");
+        sb.append("          String value=group<=match.groupCount() ? match.group(group) : null;\n");
+        sb.append("          if(value!=null) out.append(value);\n");
+        sb.append("        } else if(next=='&') out.append(match.group());\n");
+        sb.append("        else if(next=='\\\\') out.append('\\\\');\n");
+        sb.append("        else out.append('\\\\').append(next);\n");
+        sb.append("      } else out.append(c);\n");
+        sb.append("    }\n");
+        sb.append("    return out.toString();\n");
+        sb.append("  }\n");
+        sb.append("  private String regexpReplaceSql(Object value, Object patternValue, Object replacementValue, Object flagsValue){\n");
+        sb.append("    String s=toStringSafe(value), regex=toStringSafe(patternValue), replacement=toStringSafe(replacementValue), flags=toStringSafe(flagsValue);\n");
+        sb.append("    if(s==null || regex==null || replacement==null || flags==null) return null;\n");
+        sb.append("    int options=Pattern.UNICODE_CHARACTER_CLASS|Pattern.DOTALL;\n");
+        sb.append("    boolean global=false, quoted=false;\n");
+        sb.append("    for(int i=0;i<flags.length();i++){\n");
+        sb.append("      char flag=flags.charAt(i);\n");
+        sb.append("      if(flag=='g') global=true;\n");
+        sb.append("      else if(flag=='i') options|=Pattern.CASE_INSENSITIVE|Pattern.UNICODE_CASE;\n");
+        sb.append("      else if(flag=='c') options&=~Pattern.CASE_INSENSITIVE;\n");
+        sb.append("      else if(flag=='s') { options|=Pattern.DOTALL; options&=~Pattern.MULTILINE; }\n");
+        sb.append("      else if(flag=='n'||flag=='m') { options&=~Pattern.DOTALL; options|=Pattern.MULTILINE; }\n");
+        sb.append("      else if(flag=='p') { options&=~Pattern.DOTALL; options&=~Pattern.MULTILINE; }\n");
+        sb.append("      else if(flag=='w') options|=Pattern.DOTALL|Pattern.MULTILINE;\n");
+        sb.append("      else if(flag=='x') options|=Pattern.COMMENTS;\n");
+        sb.append("      else if(flag=='t') options&=~Pattern.COMMENTS;\n");
+        sb.append("      else if(flag=='q') quoted=true;\n");
+        sb.append("      else throw new IllegalArgumentException(\"Unsupported REGEXP_REPLACE flag: \"+flag);\n");
+        sb.append("    }\n");
+        sb.append("    if(quoted) options&=~Pattern.COMMENTS;\n");
+        sb.append("    java.util.regex.Matcher matcher=Pattern.compile(quoted ? Pattern.quote(regex) : postgresRegex(regex),options).matcher(s);\n");
+        sb.append("    StringBuilder out=new StringBuilder();\n");
+        sb.append("    int end=0;\n");
+        sb.append("    while(matcher.find()){\n");
+        sb.append("      out.append(s.substring(end,matcher.start())).append(regexReplacement(matcher,replacement));\n");
+        sb.append("      end=matcher.end();\n");
+        sb.append("      if(!global) break;\n");
+        sb.append("    }\n");
+        sb.append("    return out.append(s.substring(end)).toString();\n");
+        sb.append("  }\n");
+    }
+
+    private String functionName(FuncExpr f) {
+        String name = f.funcName.toLowerCase(Locale.ROOT);
+        if (name.startsWith("pg_catalog.")) return name.substring("pg_catalog.".length());
+        if (name.startsWith("syslib.utf8_")) return name.substring("syslib.".length());
+        return name;
+    }
+
+    private boolean isTimestampExpr(Expr e) {
+        if (e instanceof CastExpr c) {
+            return "timestamp".equalsIgnoreCase(c.asType) || "datetime".equalsIgnoreCase(c.asType);
+        }
+        if (e instanceof FuncExpr f) {
+            String name = functionName(f);
+            return name.equals("to_timestamp")
+                    || (name.equals("coalesce") && !isIntervalExpr(e) && f.args.stream().anyMatch(this::isTimestampExpr));
+        }
+        if (e instanceof AddExpr a) return !isIntervalExpr(e) && (isTimestampExpr(a.left) || isTimestampExpr(a.right));
+        if (e instanceof SubExpr sub) return !isIntervalExpr(e) && isTimestampExpr(sub.left);
+        return false;
+    }
+
+    private void validateRegexpFlags(String flags) {
+        for (int i = 0; i < flags.length(); i++) {
+            if ("gicsnmpwxtq".indexOf(flags.charAt(i)) < 0) {
+                throw new IllegalStateException("Unsupported REGEXP_REPLACE flag: " + flags.charAt(i));
+            }
+        }
+    }
+
+    /** Supported PostgreSQL format tokens; never pass a SQL mask directly to Java. */
+    private String timestampPattern(String mask) {
+        String[] sql = {"HH24", "HH12", "MONTH", "YYYY", "MON", "HH", "MI", "SS", "MS", "US", "MM", "DD", "AM", "PM", "OF"};
+        String[] patterns = {"HH", "hh", "MMMM", "uuuu", "MMM", "hh", "mm", "ss", "SSS", "SSSSSS", "MM", "dd", "a", "a", "xxx"};
+        StringBuilder out = new StringBuilder();
+        StringBuilder literal = new StringBuilder();
+        for (int i = 0; i < mask.length();) {
+            if (mask.charAt(i) == '"') {
+                int end = mask.indexOf('"', i + 1);
+                if (end < 0) throw new IllegalStateException("Unclosed literal in timestamp format: " + mask);
+                literal.append(mask, i + 1, end);
+                i = end + 1;
+                continue;
+            }
+            if (mask.regionMatches(true, i, "FX", 0, 2)) { i += 2; continue; }
+            if (mask.regionMatches(true, i, "TZH:TZM", 0, 7)) { appendTimestampLiteral(out, literal); out.append("xxx"); i += 7; continue; }
+            if (mask.regionMatches(true, i, "FF", 0, 2) && i + 2 < mask.length()
+                    && mask.charAt(i + 2) >= '1' && mask.charAt(i + 2) <= '9') {
+                appendTimestampLiteral(out, literal);
+                out.append("S".repeat(mask.charAt(i + 2) - '0'));
+                i += 3;
+                continue;
+            }
+            boolean matched = false;
+            for (int token = 0; token < sql.length; token++) {
+                if (mask.regionMatches(true, i, sql[token], 0, sql[token].length())) {
+                    appendTimestampLiteral(out, literal);
+                    out.append(patterns[token]); i += sql[token].length(); matched = true; break;
+                }
+            }
+            if (matched) continue;
+            char c = mask.charAt(i++);
+            if (Character.isLetter(c)) {
+                throw new IllegalStateException("Unsupported timestamp format token in: " + mask);
+            }
+            literal.append(c);
+        }
+        appendTimestampLiteral(out, literal);
+        String pattern = out.toString();
+        try { java.time.format.DateTimeFormatter.ofPattern(pattern, Locale.ENGLISH); }
+        catch (IllegalArgumentException ex) { throw new IllegalStateException("Invalid timestamp format: " + mask, ex); }
+        return pattern;
+    }
+
+    private void appendTimestampLiteral(StringBuilder out, StringBuilder literal) {
+        if (literal.length() == 0) return;
+        out.append('\'').append(literal.toString().replace("'", "''")).append('\'');
+        literal.setLength(0);
+    }
+
     private boolean isIntervalExpr(Expr e) {
         if (e instanceof IntervalExpr) return true;
-        if (e instanceof FuncExpr f) return "age".equalsIgnoreCase(f.funcName);
+        if (e instanceof CastExpr c) return "interval".equalsIgnoreCase(c.asType);
+        if (e instanceof FuncExpr f) {
+            String fn = functionName(f);
+            if (fn.equals("age")) return true;
+            if (fn.equals("coalesce")) return f.args.stream().anyMatch(this::isIntervalExpr);
+        }
         if (e instanceof AddExpr a) return isIntervalExpr(a.left) && isIntervalExpr(a.right);
         if (e instanceof SubExpr s) return isIntervalExpr(s.left) && isIntervalExpr(s.right);
         if (e instanceof UnaryMinusExpr u) return isIntervalExpr(u.expr);
@@ -443,12 +729,15 @@ public class JavaRuleGenerator {
         throw new IllegalStateException("EXTRACT/DATE_PART unit must be a constant");
     }
 
-    private void validateExtractUnit(String unit, boolean interval) {
+    private void validateExtractUnit(String unit, Expr source) {
+        boolean interval = isIntervalExpr(source);
         if (unit.equals("year") || unit.equals("month") || unit.equals("day")) return;
         if (!interval && (unit.equals("quarter") || unit.equals("dow") || unit.equals("isodow")
-                || unit.equals("doy") || unit.equals("week") || unit.equals("isoyear"))) return;
+                || unit.equals("doy") || unit.equals("week") || unit.equals("isoyear") || unit.equals("epoch"))) return;
+        if (isTimestampExpr(source) && (unit.equals("hour") || unit.equals("minute") || unit.equals("second")
+                || unit.equals("milliseconds") || unit.equals("microseconds"))) return;
         throw new IllegalStateException("Unsupported EXTRACT/DATE_PART unit for "
-                + (interval ? "interval: " : "date: ") + unit);
+                + (interval ? "interval: " : "date/timestamp: ") + unit);
     }
 
     /** Validate literal intervals during generation instead of silently returning null at runtime. */
@@ -493,12 +782,14 @@ public class JavaRuleGenerator {
         }
 
         if (e instanceof FuncExpr f) {
-            String fn = f.funcName.toLowerCase(Locale.ROOT);
+            String fn = functionName(f);
             return fn.equals("syslib.utf8_length")
                     || fn.equals("utf8_length")
                     || fn.equals("length")
                     || fn.equals("extract")
-                    || fn.equals("date_part");
+                    || fn.equals("date_part")
+                    || fn.equals("abs")
+                    || (fn.equals("coalesce") && f.args.stream().anyMatch(this::isNumericExpr));
         }
 
         return (e instanceof AddExpr)
@@ -511,8 +802,9 @@ public class JavaRuleGenerator {
 
     private boolean isDateLikeExpr(Expr e) {
         if (e instanceof FuncExpr f) {
-            String fn = f.funcName.toLowerCase(Locale.ROOT);
-            if (fn.equals("current_date") || fn.equals("now") || fn.equals("years_add")) return true;
+            String fn = functionName(f);
+            if (fn.equals("current_date") || fn.equals("now") || fn.equals("years_add") || fn.equals("to_date")) return true;
+            if (fn.equals("coalesce")) return !isIntervalExpr(e) && f.args.stream().anyMatch(this::isDateLikeExpr);
         }
 
         if (e instanceof CastExpr c) {
@@ -585,11 +877,14 @@ public class JavaRuleGenerator {
         }
 
         if (e instanceof FuncExpr f) {
-            String fname = f.funcName.toLowerCase(Locale.ROOT);
+            String fname = functionName(f);
 
             if (fname.equals("regexp_like")) {
+                requireArity(f, 2, 2);
                 return genExpr(e, requiredFields);
             }
+            throw new IllegalStateException("Function " + f.funcName
+                    + " cannot be used as a boolean predicate; use a comparison or IS NULL");
         }
 
         throw new IllegalStateException("Unsupported boolean expression: " + e.getClass().getSimpleName());
@@ -609,6 +904,8 @@ public class JavaRuleGenerator {
         if (e instanceof StringExpr se) {
             return "\"" + escapeJava(se.value) + "\"";
         }
+
+        if (e instanceof NullExpr) return "null";
 
         if (e instanceof NumberExpr ne) {
             return ne.value;
@@ -660,7 +957,7 @@ public class JavaRuleGenerator {
 
         if (e instanceof UnaryMinusExpr u) {
             if (isIntervalExpr(u.expr)) {
-                return "((Period)" + genExpr(u.expr, requiredFields) + ").negated()";
+                return "negateInterval(" + genExpr(u.expr, requiredFields) + ")";
             }
             return "sub(0, "
                     + genExpr(u.expr, requiredFields)
@@ -671,11 +968,18 @@ public class JavaRuleGenerator {
             String l = genExpr(ce.left, requiredFields);
             String r = genExpr(ce.right, requiredFields);
 
+            if (ce.left instanceof NullExpr || ce.right instanceof NullExpr) return "false";
+
             if (isIntervalExpr(ce.left) || isIntervalExpr(ce.right)) {
                 if (!isIntervalExpr(ce.left) || !isIntervalExpr(ce.right)) {
-                    throw new IllegalStateException("Interval comparison requires two interval expressions");
+                    throw new IllegalStateException("Interval comparison requires two interval expressions. "
+                            + "For numeric age use EXTRACT(year FROM age(...)); for an interval boundary use INTERVAL '18 years'.");
                 }
                 return "compareIntervalSql(" + l + ",\"" + escapeJava(ce.op) + "\"," + r + ")";
+            }
+
+            if (isTimestampExpr(ce.left) || isTimestampExpr(ce.right)) {
+                return "timestampCompare(" + l + ",\"" + escapeJava(ce.op) + "\"," + r + ")";
             }
 
             boolean dateLike =
@@ -825,8 +1129,7 @@ public class JavaRuleGenerator {
         }
 
         if (e instanceof FuncExpr f) {
-            String fname =
-                    f.funcName.toLowerCase(Locale.ROOT);
+            String fname = functionName(f);
 
             if (fname.equals("age")) {
                 requireArity(f, 1, 2);
@@ -838,13 +1141,51 @@ public class JavaRuleGenerator {
             if (fname.equals("extract") || fname.equals("date_part")) {
                 requireArity(f, 2, 2);
                 String unit = extractUnit(f.args.get(0));
-                validateExtractUnit(unit, isIntervalExpr(f.args.get(1)));
+                validateExtractUnit(unit, f.args.get(1));
                 return "extractSql(\"" + escapeJava(unit) + "\","
                         + genExpr(f.args.get(1), requiredFields) + ")";
             }
 
+            if (fname.equals("to_timestamp") || fname.equals("to_date")) {
+                requireArity(f, fname.equals("to_date") ? 2 : 1, 2);
+                String pattern = "null";
+                if (f.args.size() == 2) {
+                    if (!(f.args.get(1) instanceof StringExpr mask)) {
+                        throw new IllegalStateException("Function " + f.funcName + " format must be a constant string");
+                    }
+                    pattern = "\"" + escapeJava(timestampPattern(mask.value)) + "\"";
+                }
+                String call = "timestampSql(" + genExpr(f.args.get(0), requiredFields) + "," + pattern + ")";
+                return fname.equals("to_date") ? "toDateOrNull(" + call + ")" : call;
+            }
+            if (fname.equals("regexp_replace")) {
+                requireArity(f, 3, 4);
+                if (f.args.size() == 4 && f.args.get(3) instanceof StringExpr flags) {
+                    validateRegexpFlags(flags.value);
+                }
+                return "regexpReplaceSql(" + genExpr(f.args.get(0), requiredFields) + ","
+                        + genExpr(f.args.get(1), requiredFields) + "," + genExpr(f.args.get(2), requiredFields)
+                        + "," + (f.args.size() == 4 ? genExpr(f.args.get(3), requiredFields) : "\"\"") + ")";
+            }
+            if (fname.equals("btrim")) {
+                requireArity(f, 1, 2);
+                return "btrimSql(" + genExpr(f.args.get(0), requiredFields) + ","
+                        + (f.args.size() == 2 ? genExpr(f.args.get(1), requiredFields) : "\" \"") + ")";
+            }
+            if (fname.equals("abs")) {
+                requireArity(f, 1, 1);
+                return "absSql(" + genExpr(f.args.get(0), requiredFields) + ")";
+            }
+            if (fname.equals("utf8_substr")) {
+                requireArity(f, 2, 3);
+                return "utf8Substring(" + genExpr(f.args.get(0), requiredFields) + ","
+                        + genExpr(f.args.get(1), requiredFields) + ","
+                        + (f.args.size() == 3 ? genExpr(f.args.get(2), requiredFields) : "2147483647") + ")";
+            }
+
             if (fname.equals("substring")
                     || fname.equals("substr")) {
+                requireArity(f, 2, 3);
 
                 if (f.args.size() == 2) {
                     return "substringSql("
@@ -870,6 +1211,7 @@ public class JavaRuleGenerator {
             if (fname.equals("syslib.utf8_length")
                     || fname.equals("utf8_length")
                     || fname.equals("length")) {
+                requireArity(f, 1, 1);
 
                 return "utf8Length("
                         + genExpr(f.args.get(0), requiredFields)
@@ -877,6 +1219,7 @@ public class JavaRuleGenerator {
             }
 
             if (fname.equals("regexp_like")) {
+                requireArity(f, 2, 2);
                 return "regexp_like("
                         + genExpr(f.args.get(0), requiredFields)
                         + ","
@@ -885,6 +1228,7 @@ public class JavaRuleGenerator {
             }
 
             if (fname.equals("upper")) {
+                requireArity(f, 1, 1);
                 String x =
                         genExpr(f.args.get(0), requiredFields);
 
@@ -896,6 +1240,7 @@ public class JavaRuleGenerator {
             }
 
             if (fname.equals("years_add")) {
+                requireArity(f, 2, 2);
                 return "years_add("
                         + genExpr(f.args.get(0), requiredFields)
                         + ","
@@ -904,6 +1249,7 @@ public class JavaRuleGenerator {
             }
 
             if (fname.equals("replace")) {
+                requireArity(f, 3, 3);
                 return "replace("
                         + genExpr(f.args.get(0), requiredFields)
                         + ","
@@ -914,7 +1260,8 @@ public class JavaRuleGenerator {
             }
 
             if (fname.equals("syslib.utf8_lower")
-                    || fname.equals("utf8_lower")) {
+                    || fname.equals("utf8_lower") || fname.equals("lower")) {
+                requireArity(f, 1, 1);
 
                 return "utf8_lower("
                         + genExpr(f.args.get(0), requiredFields)
@@ -922,12 +1269,14 @@ public class JavaRuleGenerator {
             }
 
             if (fname.equals("trim")) {
+                requireArity(f, 1, 1);
                 return "trim("
                         + genExpr(f.args.get(0), requiredFields)
                         + ")";
             }
 
             if (fname.equals("concat")) {
+                requireArity(f, 1, 1000);
                 StringBuilder sb =
                         new StringBuilder("concat(");
 
@@ -949,6 +1298,7 @@ public class JavaRuleGenerator {
             }
 
             if (fname.equals("coalesce")) {
+                requireArity(f, 1, 1000);
                 StringBuilder sb =
                         new StringBuilder("coalesce(");
 
@@ -1011,6 +1361,13 @@ public class JavaRuleGenerator {
                 return "castString(" + inner + ")";
             }
 
+            if (type.equals("timestamp") || type.equals("datetime")) {
+                return "toTimestampOrNull(" + inner + ")";
+            }
+            if (type.equals("interval")) {
+                if (!isIntervalExpr(c.expr)) throw new IllegalStateException("CAST AS interval requires an interval expression");
+                return inner;
+            }
             if (type.equals("date")) {
                 return "toDateOrNull(" + inner + ")";
             }

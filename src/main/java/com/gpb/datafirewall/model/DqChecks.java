@@ -1,18 +1,16 @@
 package com.gpb.datafirewall.model;
 
 import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 
-@Entity
-@Data
 @AllArgsConstructor
 @RequiredArgsConstructor
-@Table(name = "dqchecks", schema = "datafirewall")
+@Getter 
+@Setter 
 public class DqChecks {
     @Id
     private Integer id;

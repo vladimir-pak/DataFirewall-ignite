@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * Важно: Janino НЕ поддерживает switch-expression, поэтому используем if/else.
  */
 public class JavaRuleGenerator {
-    public static final String GENERATOR_VERSION = "4-decode";
+    public static final String GENERATOR_VERSION = "5-case-when";
     private static final Logger log = LoggerFactory.getLogger(JavaRuleGenerator.class);
     private static final Pattern INTERVAL_PART = Pattern.compile(
             "\\G\\s*([+-]?\\d+)\\s+(years?|months?|weeks?|days?)\\b", Pattern.CASE_INSENSITIVE);
@@ -650,6 +650,9 @@ public class JavaRuleGenerator {
     }
 
     private boolean isTimestampExpr(Expr e) {
+        if (e instanceof CaseExpr c) {
+            return !isIntervalExpr(e) && caseResults(c).stream().anyMatch(this::isTimestampExpr);
+        }
         if (e instanceof CastExpr c) {
             return "timestamp".equalsIgnoreCase(c.asType) || "datetime".equalsIgnoreCase(c.asType);
         }
@@ -724,6 +727,7 @@ public class JavaRuleGenerator {
 
     private boolean isIntervalExpr(Expr e) {
         if (e instanceof IntervalExpr) return true;
+        if (e instanceof CaseExpr c) return caseResults(c).stream().anyMatch(this::isIntervalExpr);
         if (e instanceof CastExpr c) return "interval".equalsIgnoreCase(c.asType);
         if (e instanceof FuncExpr f) {
             String fn = functionName(f);
@@ -735,6 +739,14 @@ public class JavaRuleGenerator {
         if (e instanceof SubExpr s) return isIntervalExpr(s.left) && isIntervalExpr(s.right);
         if (e instanceof UnaryMinusExpr u) return isIntervalExpr(u.expr);
         return false;
+    }
+
+    /** Only THEN/ELSE expressions determine CASE's return type; WHEN is boolean. */
+    private java.util.List<Expr> caseResults(CaseExpr c) {
+        java.util.List<Expr> results = new java.util.ArrayList<>();
+        for (CaseExpr.Branch branch : c.branches) results.add(branch.result);
+        results.add(c.elseExpr);
+        return results;
     }
 
     /** Only result/default expressions determine DECODE's return type. */
@@ -842,6 +854,7 @@ public class JavaRuleGenerator {
 
     private boolean isNumericExpr(Expr e) {
         if (e instanceof NumberExpr) return true;
+        if (e instanceof CaseExpr c) return caseResults(c).stream().anyMatch(this::isNumericExpr);
 
         if (e instanceof CastExpr c) {
             String type = c.asType == null ? "" : c.asType.toLowerCase(Locale.ROOT);
@@ -876,6 +889,9 @@ public class JavaRuleGenerator {
     }
 
     private boolean isDateLikeExpr(Expr e) {
+        if (e instanceof CaseExpr c) {
+            return !isIntervalExpr(e) && caseResults(c).stream().anyMatch(this::isDateLikeExpr);
+        }
         if (e instanceof FuncExpr f) {
             String fn = functionName(f);
             if (fn.equals("current_date") || fn.equals("now") || fn.equals("years_add") || fn.equals("to_date")) return true;
@@ -989,6 +1005,10 @@ public class JavaRuleGenerator {
 
         if (e instanceof IntervalExpr itv) {
             return genInterval(itv.literal);
+        }
+
+        if (e instanceof CaseExpr c) {
+            return genCase(c, requiredFields);
         }
 
         if (e instanceof AddExpr a) {
@@ -1457,6 +1477,26 @@ public class JavaRuleGenerator {
 
         throw new IllegalStateException(
                 "Unhandled expr type: " + e.getClass());
+    }
+
+    private String genCase(CaseExpr c, Set<String> requiredFields) {
+        java.util.List<String> conditions = new java.util.ArrayList<>();
+        java.util.List<String> results = new java.util.ArrayList<>();
+
+        // Generate in SQL order so requiredFields keeps its deterministic encounter order.
+        for (CaseExpr.Branch branch : c.branches) {
+            conditions.add(genBool(branch.condition, requiredFields));
+            results.add(genExpr(branch.result, requiredFields));
+        }
+
+        String generated = "(Object)(" + genExpr(c.elseExpr, requiredFields) + ")";
+        for (int i = conditions.size() - 1; i >= 0; i--) {
+            // Object casts prevent Java/Janino from choosing an incompatible primitive
+            // common type for heterogeneous SQL results. Conditional evaluation stays lazy.
+            generated = "(" + conditions.get(i) + " ? (Object)(" + results.get(i)
+                    + ") : " + generated + ")";
+        }
+        return generated;
     }
 
     private String escapeJava(String s) {

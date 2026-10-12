@@ -279,6 +279,31 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
     }
 
     @Override
+    public Expr visitCaseValue(SqlWhereParser.CaseValueContext ctx) {
+        return visit(ctx.caseExpression());
+    }
+
+    @Override
+    public Expr visitCaseExpression(SqlWhereParser.CaseExpressionContext ctx) {
+        List<SqlWhereParser.ExpressionContext> conditions = ctx.expression();
+        List<SqlWhereParser.ValueContext> values = ctx.value();
+        List<CaseExpr.Branch> branches = new ArrayList<>(conditions.size());
+
+        for (int i = 0; i < conditions.size(); i++) {
+            branches.add(new CaseExpr.Branch(
+                    visit(conditions.get(i)),
+                    visit(values.get(i))
+            ));
+        }
+
+        Expr elseExpr = values.size() > conditions.size()
+                ? visit(values.get(values.size() - 1))
+                : new NullExpr();
+
+        return new CaseExpr(branches, elseExpr);
+    }
+
+    @Override
     public Expr visitIdentValue(SqlWhereParser.IdentValueContext ctx) {
         String name = ctx.IDENT().getText();
         return new FuncExpr(name, Collections.emptyList());

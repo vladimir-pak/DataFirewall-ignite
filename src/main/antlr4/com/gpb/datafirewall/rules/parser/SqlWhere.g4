@@ -77,8 +77,13 @@ atom
     | CAST LPAREN value AS IDENT RPAREN          # CastValue
     | EXTRACT LPAREN (IDENT | STRING) FROM value RPAREN # ExtractValue
     | INTERVAL STRING                            # IntervalValue
+    | caseExpression                             # CaseValue
     | IDENT                                      # IdentValue
     | LPAREN value RPAREN                        # ValueParen
+    ;
+
+caseExpression
+    : CASE (WHEN expression THEN value)+ (ELSE value)? END
     ;
 
 // --------------------
@@ -116,6 +121,12 @@ EXTRACT  : [Ee][Xx][Tt][Rr][Aa][Cc][Tt];
 INTERVAL : [Ii][Nn][Tt][Ee][Rr][Vv][Aa][Ll];
 
 BETWEEN : [Bb][Ee][Tt][Ww][Ee][Ee][Nn];
+
+CASE : [Cc][Aa][Ss][Ee];
+WHEN : [Ww][Hh][Ee][Nn];
+THEN : [Tt][Hh][Ee][Nn];
+ELSE : [Ee][Ll][Ss][Ee];
+END  : [Ee][Nn][Dd];
 
 AND : [Aa][Nn][Dd];
 OR  : [Oo][Rr];

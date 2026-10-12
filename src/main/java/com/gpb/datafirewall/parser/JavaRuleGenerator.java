@@ -16,10 +16,16 @@ import java.util.regex.Pattern;
  * Важно: Janino НЕ поддерживает switch-expression, поэтому используем if/else.
  */
 public class JavaRuleGenerator {
-    public static final String GENERATOR_VERSION = "3-typed-functions";
+    public static final String GENERATOR_VERSION = "4-decode";
     private static final Logger log = LoggerFactory.getLogger(JavaRuleGenerator.class);
     private static final Pattern INTERVAL_PART = Pattern.compile(
             "\\G\\s*([+-]?\\d+)\\s+(years?|months?|weeks?|days?)\\b", Pattern.CASE_INSENSITIVE);
+
+    /** Each generation owns its helpers; the pipeline shares this generator across threads. */
+    private static final class GenerationContext extends LinkedHashSet<String> {
+        private final StringBuilder decodeMethods = new StringBuilder();
+        private int decodeId;
+    }
 
     public String generate(String className, Expr expr) {
         StringBuilder sb = new StringBuilder();
@@ -339,9 +345,10 @@ public class JavaRuleGenerator {
         sb.append("    } catch(Exception e){ return null; }\n");
         sb.append("  }\n");
 
-        Set<String> requiredFields = new LinkedHashSet<>();
+        GenerationContext requiredFields = new GenerationContext();
         // Во время генерации Java-выражения одновременно собираем все FieldExpr
         String condition = genBool(expr, requiredFields);
+        sb.append(requiredFields.decodeMethods);
 
         sb.append("  public boolean apply(java.util.Map<String,String> data){\n");
         sb.append("    try{\n");
@@ -445,6 +452,20 @@ public class JavaRuleGenerator {
     }
 
     private void appendSqlFunctionHelpers(StringBuilder sb) {
+        sb.append("""
+                  private boolean decodeMatch(Object value, Object search, int mode){
+                    if(value==null || search==null) return value==search;
+                    if(mode==1){
+                      try { return new java.math.BigDecimal(value.toString().trim()).compareTo(
+                          new java.math.BigDecimal(search.toString().trim()))==0; }
+                      catch(NumberFormatException ex){ return false; }
+                    }
+                    if(mode==2) return dateEq(value,search);
+                    if(mode==3) return timestampCompare(value,"=",search);
+                    if(mode==4) return sqlEquals(value,search);
+                    return java.util.Objects.equals(toStringSafe(value),toStringSafe(search));
+                  }
+                """);
         sb.append("  private Period negateInterval(Object value){\n");
         sb.append("    return value==null ? null : ((Period)value).negated();\n");
         sb.append("  }\n");
@@ -635,7 +656,8 @@ public class JavaRuleGenerator {
         if (e instanceof FuncExpr f) {
             String name = functionName(f);
             return name.equals("to_timestamp")
-                    || (name.equals("coalesce") && !isIntervalExpr(e) && f.args.stream().anyMatch(this::isTimestampExpr));
+                    || (name.equals("coalesce") && !isIntervalExpr(e) && f.args.stream().anyMatch(this::isTimestampExpr))
+                    || (name.equals("decode") && decodeResults(f).stream().anyMatch(this::isTimestampExpr));
         }
         if (e instanceof AddExpr a) return !isIntervalExpr(e) && (isTimestampExpr(a.left) || isTimestampExpr(a.right));
         if (e instanceof SubExpr sub) return !isIntervalExpr(e) && isTimestampExpr(sub.left);
@@ -707,11 +729,63 @@ public class JavaRuleGenerator {
             String fn = functionName(f);
             if (fn.equals("age")) return true;
             if (fn.equals("coalesce")) return f.args.stream().anyMatch(this::isIntervalExpr);
+            if (fn.equals("decode")) return decodeResults(f).stream().anyMatch(this::isIntervalExpr);
         }
         if (e instanceof AddExpr a) return isIntervalExpr(a.left) && isIntervalExpr(a.right);
         if (e instanceof SubExpr s) return isIntervalExpr(s.left) && isIntervalExpr(s.right);
         if (e instanceof UnaryMinusExpr u) return isIntervalExpr(u.expr);
         return false;
+    }
+
+    /** Only result/default expressions determine DECODE's return type. */
+    private java.util.List<Expr> decodeResults(FuncExpr f) {
+        requireDecodeArity(f);
+        java.util.List<Expr> results = new java.util.ArrayList<>();
+        for (int i = 2; i < f.args.size(); i += 2) results.add(f.args.get(i));
+        if (f.args.size() % 2 == 0) results.add(f.args.get(f.args.size() - 1));
+        return results;
+    }
+
+    private void requireDecodeArity(FuncExpr f) {
+        if (f.args.size() == 2) {
+            throw new IllegalStateException("Conditional DECODE requires at least 3 arguments: "
+                    + "value, search, result [, search, result ...] [, default]. "
+                    + "The PostgreSQL binary DECODE(text, format) overload is not supported.");
+        }
+        requireArity(f, 3, 1000);
+    }
+
+    private int decodeComparisonMode(FuncExpr f) {
+        java.util.List<Expr> inputs = new java.util.ArrayList<>();
+        inputs.add(f.args.get(0));
+        for (int i = 1; i + 1 < f.args.size(); i += 2) inputs.add(f.args.get(i));
+        if (inputs.stream().anyMatch(this::isIntervalExpr)) return 4;
+        if (inputs.stream().anyMatch(this::isTimestampExpr)) return 3;
+        if (inputs.stream().anyMatch(this::isDateLikeExpr)) return 2;
+        if (inputs.stream().anyMatch(this::isNumericExpr)) return 1;
+        return 0;
+    }
+
+    private String genDecode(FuncExpr f, Set<String> requiredFields) {
+        requireDecodeArity(f);
+        GenerationContext context = (GenerationContext) requiredFields;
+        String name = "decodeValue" + context.decodeId++;
+        int mode = decodeComparisonMode(f);
+        StringBuilder method = new StringBuilder("  private Object ")
+                .append(name).append("(java.util.Map<String,String> data){\n")
+                .append("    Object value=").append(genExpr(f.args.get(0), requiredFields)).append(";\n");
+        // Java if/return keeps search and result evaluation lazy; no lambda/inner class bytecode.
+        for (int i = 1; i + 1 < f.args.size(); i += 2) {
+            String search = genExpr(f.args.get(i), requiredFields);
+            String result = genExpr(f.args.get(i + 1), requiredFields);
+            method.append("    if(decodeMatch(value,").append(search).append(",").append(mode)
+                    .append(")) return ").append(result).append(";\n");
+        }
+        String fallback = f.args.size() % 2 == 0
+                ? genExpr(f.args.get(f.args.size() - 1), requiredFields) : "null";
+        method.append("    return ").append(fallback).append(";\n  }\n");
+        context.decodeMethods.append(method);
+        return name + "(data)";
     }
 
     private void requireArity(FuncExpr f, int min, int max) {
@@ -789,7 +863,8 @@ public class JavaRuleGenerator {
                     || fn.equals("extract")
                     || fn.equals("date_part")
                     || fn.equals("abs")
-                    || (fn.equals("coalesce") && f.args.stream().anyMatch(this::isNumericExpr));
+                    || (fn.equals("coalesce") && f.args.stream().anyMatch(this::isNumericExpr))
+                    || (fn.equals("decode") && decodeResults(f).stream().anyMatch(this::isNumericExpr));
         }
 
         return (e instanceof AddExpr)
@@ -805,6 +880,7 @@ public class JavaRuleGenerator {
             String fn = functionName(f);
             if (fn.equals("current_date") || fn.equals("now") || fn.equals("years_add") || fn.equals("to_date")) return true;
             if (fn.equals("coalesce")) return !isIntervalExpr(e) && f.args.stream().anyMatch(this::isDateLikeExpr);
+            if (fn.equals("decode")) return decodeResults(f).stream().anyMatch(this::isDateLikeExpr);
         }
 
         if (e instanceof CastExpr c) {
@@ -1295,6 +1371,10 @@ public class JavaRuleGenerator {
 
                 sb.append(")");
                 return sb.toString();
+            }
+
+            if (fname.equals("decode")) {
+                return genDecode(f, requiredFields);
             }
 
             if (fname.equals("coalesce")) {

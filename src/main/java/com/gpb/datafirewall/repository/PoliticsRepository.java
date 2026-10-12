@@ -207,4 +207,56 @@ public class PoliticsRepository {
         });
 
     }
+
+    /**
+     * Вспомогательный кэш для определения кода ПОЛа.
+     */
+    public Map<String, String> getGenderMapping() {
+        String sql = """
+            select di.code, di.name as mapped_code
+            from datafirewall.dictionary_items di
+            join datafirewall.dictionaries d
+            on d.uuid = di.dictionary_uuid
+            where d.code = 'GENDER_MAPPING'
+        """;
+
+        return jdbcTemplate.query(sql, rs -> {
+            Map<String, String> result = new HashMap<>();
+
+            while (rs.next()) {
+                result.put(
+                    rs.getString("code"),
+                    rs.getString("mapped_code")
+                );
+            }
+
+            return result;
+        });
+    }
+
+    /**
+     * Вспомогательный кэш для определения кода ТИП ДУЛ.
+     */
+    public Map<String, String> getTypeDulMapping() {
+        String sql = """
+            select di.code, di.name as mapped_code
+            from datafirewall.dictionary_items di
+            join datafirewall.dictionaries d
+            on d.uuid = di.dictionary_uuid
+            where d.code = 'TYPE_DUL_MAPPING'
+        """;
+
+        return jdbcTemplate.query(sql, rs -> {
+            Map<String, String> result = new HashMap<>();
+
+            while (rs.next()) {
+                result.put(
+                    rs.getString("code"),
+                    rs.getString("mapped_code")
+                );
+            }
+
+            return result;
+        });
+    }
 }

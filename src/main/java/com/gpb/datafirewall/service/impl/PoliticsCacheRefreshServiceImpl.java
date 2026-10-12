@@ -93,6 +93,12 @@ public class PoliticsCacheRefreshServiceImpl {
                 Map<String, Boolean> controlAreaFilterFlag = politicsRepository.getFilterFlags();
                 createNewVersion(Caches.POLITICS_FILTER_FLAG.getName(), newVersion, controlAreaFilterFlag);
 
+                Map<String, String> genderMapping = politicsRepository.getGenderMapping();
+                createNewVersion(Caches.GENDER_MAPPING.getName(), newVersion, genderMapping);
+
+                Map<String, String> typeDulMapping = politicsRepository.getTypeDulMapping();
+                createNewVersion(Caches.TYPE_DUL_MAPPING.getName(), newVersion, typeDulMapping);
+
                 ClientCache<String, Long> statCache =
                         igniteCacheService.getOrCreateCacheByFullName(Caches.PG_STAT.getName());
                 statCache.putAll(newStatCache);
@@ -108,7 +114,9 @@ public class PoliticsCacheRefreshServiceImpl {
                         Caches.POLITICS_ERROR_MESSAGES.getName(),
                         Caches.POLITICS_DATASET_EXCLUSION.getName(),
                         Caches.POLITICS_CONTROL_AREA_RULES.getName(),
-                        Caches.POLITICS_FILTER_FLAG.getName()
+                        Caches.POLITICS_FILTER_FLAG.getName(),
+                        Caches.GENDER_MAPPING.getName(),
+                        Caches.TYPE_DUL_MAPPING.getName()
                     );
                 for (String cacheName : politics) {
                     try {
@@ -126,6 +134,9 @@ public class PoliticsCacheRefreshServiceImpl {
                 destroyOldCaches(Caches.POLITICS_ERROR_MESSAGES.getName(), currentVersion, newVersion);
                 destroyOldCaches(Caches.POLITICS_DATASET_EXCLUSION.getName(), currentVersion, newVersion);
                 destroyOldCaches(Caches.POLITICS_CONTROL_AREA_RULES.getName(), currentVersion, newVersion);
+                destroyOldCaches(Caches.POLITICS_FILTER_FLAG.getName(), currentVersion, newVersion);
+                destroyOldCaches(Caches.GENDER_MAPPING.getName(), currentVersion, newVersion);
+                destroyOldCaches(Caches.TYPE_DUL_MAPPING.getName(), currentVersion, newVersion);
             }
 
             // 7. Отправляем событие об обновлении в Kafka

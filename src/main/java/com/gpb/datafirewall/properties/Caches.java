@@ -8,6 +8,8 @@ public enum Caches {
     POLITICS_CONTROL_AREA_RULES("politics_control_area_rules"),
     POLITICS_ERROR_MESSAGES("politics_error_messages"),
     POLITICS_DATASET_EXCLUSION("politics_dataset_exclusion"),
+    GENDER_MAPPING("gender_mapping"),
+    TYPE_DUL_MAPPING("type_dul_mapping"),
     POLITICS_FILTER_FLAG("politics_filter_flag");
 
     private final String name;

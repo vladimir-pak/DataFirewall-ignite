@@ -1,5 +1,8 @@
 package com.gpb.datafirewall.dto;
 
+import java.util.Collection;
+import java.util.TreeSet;
+
 public record RefreshResult(
         boolean started,
         boolean success,
@@ -10,6 +13,18 @@ public record RefreshResult(
 ) {
     public static RefreshResult success(long durationMs) {
         return new RefreshResult(true, true, false, false, durationMs, "OK");
+    }
+
+    public static RefreshResult partialSuccess(long durationMs, Collection<Integer> skippedRuleIds) {
+        return new RefreshResult(
+                true,
+                true,
+                false,
+                false,
+                durationMs,
+                "Обновление выполнено частично. Пропущены Rule с ошибками: "
+                        + new TreeSet<>(skippedRuleIds)
+        );
     }
 
     public static RefreshResult timeout(long timeoutMs) {

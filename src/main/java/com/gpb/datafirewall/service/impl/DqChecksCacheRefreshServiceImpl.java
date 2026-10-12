@@ -46,9 +46,12 @@ public class DqChecksCacheRefreshServiceImpl {
 
     private Map<Integer, String> changedOrNewRulesSql = new LinkedHashMap<>();
     private Set<Integer> deletedRuleIds = new LinkedHashSet<>();
+    private volatile Map<Integer, String> lastCompilationErrors = Map.of();
 
     @Transactional
     public void refreshCaches() {
+        this.lastCompilationErrors = Map.of();
+
         // 1. Читаем всю таблицу
         List<DqChecks> rows = dqChecksRepository.findAll();
 
@@ -120,46 +123,61 @@ public class DqChecksCacheRefreshServiceImpl {
 
         // 6. Компилируем только новые/изменённые правила
         Map<String, byte[]> compiledDelta;
+        Map<Integer, String> compilationErrors;
 
         try {
-
             compiledDelta =
                     normalized.isEmpty()
                             ? Collections.emptyMap()
                             : ruleCompiler.process(normalized);
-
+            compilationErrors = ruleCompiler.getCompilationErrors();
         } finally {
             ruleCompiler.shutdown();
         }
 
-        Set<String> expectedRules =
+        Set<Integer> successfullyCompiledRuleIds =
                 normalized.keySet().stream()
-                        .map(id -> "Rule" + id)
+                        .filter(id -> compiledDelta.containsKey("Rule" + id))
                         .collect(
                                 Collectors.toCollection(
                                         LinkedHashSet::new
                                 )
                         );
 
-        Set<String> missingRules =
-                new LinkedHashSet<>(expectedRules);
+        Set<Integer> failedRuleIds =
+                new LinkedHashSet<>(normalized.keySet());
 
-        missingRules.removeAll(
-                compiledDelta.keySet()
-        );
+        failedRuleIds.removeAll(successfullyCompiledRuleIds);
 
-        if (!missingRules.isEmpty()) {
+        if (!failedRuleIds.isEmpty()) {
+            Map<Integer, String> failedReasons = new TreeMap<>();
+            for (Integer failedRuleId : failedRuleIds) {
+                failedReasons.put(
+                        failedRuleId,
+                        compilationErrors.getOrDefault(failedRuleId, "Unknown compilation error")
+                );
+            }
+            this.lastCompilationErrors = Collections.unmodifiableMap(failedReasons);
 
             log.error(
-                    "Компиляция не завершена для проверки: {}",
-                    missingRules
+                    "Не удалось скомпилировать {} Rule: {}. "
+                            + "Они не будут обновлены в snapshot; успешные Rule и удаления будут опубликованы. "
+                            + "Для существующих ошибочных Rule сохранится bytecode из предыдущей версии. Причины: {}",
+                    failedRuleIds.size(),
+                    failedRuleIds,
+                    failedReasons
             );
+        }
 
-            throw new IllegalStateException(
-                    "Ошибка компиляции для проверки: "
-                            + missingRules
-                            + ". Причины: " + new TreeMap<>(ruleCompiler.getCompilationErrors())
+        // Если не скомпилировалось ни одного изменения и удалений нет,
+        // публиковать идентичную новую версию snapshot не требуется.
+        // Хэши ошибочных Rule также не обновляем: следующий refresh повторит попытку.
+        if (compiledDelta.isEmpty() && this.deletedRuleIds.isEmpty()) {
+            log.warn(
+                    "Snapshot не изменён: успешно скомпилированных Rule и удалений нет. "
+                            + "Ошибочные Rule будут повторно обработаны при следующем refresh"
             );
+            return;
         }
 
         // 7. Определяем текущую версию compiled_rules из БД
@@ -207,10 +225,20 @@ public class DqChecksCacheRefreshServiceImpl {
         );
         cacheVersionRepository.save(newVersionRow);
 
-        // 10. Полностью обновляем dqchecks_hash снапшотом
+        // 10. Обновляем hash только для успешно применённых изменений.
+        // Для ошибочных новых Rule hash не создаётся, а для ошибочных изменённых
+        // сохраняется предыдущий hash — это гарантирует повторную попытку компиляции.
+        Map<Integer, String> updatedHashes = new LinkedHashMap<>(cacheHashes);
+        for (Integer successfulId : successfullyCompiledRuleIds) {
+            updatedHashes.put(successfulId, dbHashes.get(successfulId));
+        }
+        for (Integer deletedId : this.deletedRuleIds) {
+            updatedHashes.remove(deletedId);
+        }
+
         hashCache.clear();
-        if (!dbHashes.isEmpty()) {
-            hashCache.putAll(dbHashes);
+        if (!updatedHashes.isEmpty()) {
+            hashCache.putAll(updatedHashes);
         }
 
         // 11. Удаляем старые кэши, за исключением нового и предыдущего
@@ -222,6 +250,15 @@ public class DqChecksCacheRefreshServiceImpl {
         kafkaProducerService.send(
                 Caches.COMPILED_RULES.getName(),
                 newVersion
+        );
+
+        log.info(
+                "Опубликован snapshot compiled_rules_{}: успешно обновлено Rule={}, "
+                        + "пропущено с ошибками={}, удалено={}",
+                newVersion,
+                successfullyCompiledRuleIds.size(),
+                failedRuleIds.size(),
+                this.deletedRuleIds.size()
         );
     }
 
@@ -252,6 +289,10 @@ public class DqChecksCacheRefreshServiceImpl {
 
     public Set<Integer> getDeletedRuleIds() {
         return Collections.unmodifiableSet(deletedRuleIds);
+    }
+
+    public Map<Integer, String> getLastCompilationErrors() {
+        return lastCompilationErrors;
     }
 
     private String sha256Hex(String source) {

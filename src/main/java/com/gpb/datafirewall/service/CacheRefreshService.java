@@ -96,8 +96,21 @@ public class CacheRefreshService {
             CompletableFuture.allOf(f1, f2).get(timeoutMs, TimeUnit.MILLISECONDS);
 
             long durationMs = System.currentTimeMillis() - startedAt;
-            log.info("=== Обновление кэша завершено успешно. trigger={} durationMs={} ===", trigger, durationMs);
+            var compilationErrors = dqChecksRefreshService.getLastCompilationErrors();
 
+            if (!compilationErrors.isEmpty()) {
+                log.warn(
+                        "=== Обновление кэша завершено частично. trigger={} durationMs={} "
+                                + "skippedRules={} errors={} ===",
+                        trigger,
+                        durationMs,
+                        compilationErrors.keySet(),
+                        compilationErrors
+                );
+                return RefreshResult.partialSuccess(durationMs, compilationErrors.keySet());
+            }
+
+            log.info("=== Обновление кэша завершено успешно. trigger={} durationMs={} ===", trigger, durationMs);
             return RefreshResult.success(durationMs);
 
         } catch (TimeoutException e) {

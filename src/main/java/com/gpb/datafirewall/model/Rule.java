@@ -1,5 +1,14 @@
 package com.gpb.datafirewall.model;
 
-public interface Rule {
-    public boolean apply(java.util.Map<String, String> data);
+import java.io.Serializable;
+import java.util.Map;
+import java.util.Set;
+
+public interface Rule extends Serializable {
+
+    boolean apply(Map<String, String> data);
+
+    default Set<String> referencedFields() {
+        return Set.of();
+    }
 }

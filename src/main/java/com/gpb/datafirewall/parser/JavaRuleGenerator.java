@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * Важно: Janino НЕ поддерживает switch-expression, поэтому используем if/else.
  */
 public class JavaRuleGenerator {
-    public static final String GENERATOR_VERSION = "5-case-when";
+    public static final String GENERATOR_VERSION = "6-referenced-fields";
     private static final Logger log = LoggerFactory.getLogger(JavaRuleGenerator.class);
     private static final Pattern INTERVAL_PART = Pattern.compile(
             "\\G\\s*([+-]?\\d+)\\s+(years?|months?|weeks?|days?)\\b", Pattern.CASE_INSENSITIVE);
@@ -348,6 +348,8 @@ public class JavaRuleGenerator {
         GenerationContext requiredFields = new GenerationContext();
         // Во время генерации Java-выражения одновременно собираем все FieldExpr
         String condition = genBool(expr, requiredFields);
+
+        appendReferencedFields(sb, requiredFields);
         sb.append(requiredFields.decodeMethods);
 
         sb.append("  public boolean apply(java.util.Map<String,String> data){\n");
@@ -377,6 +379,33 @@ public class JavaRuleGenerator {
 
         log.debug(sb.toString());
         return sb.toString();
+    }
+
+    private void appendReferencedFields(StringBuilder sb, Set<String> referencedFields) {
+        if (referencedFields.isEmpty()) {
+            sb.append("  private static final Set<String> REFERENCED_FIELDS = Set.of();\n");
+        } else {
+            sb.append("  private static final Set<String> REFERENCED_FIELDS = Set.of(\n");
+
+            int index = 0;
+            for (String field : referencedFields) {
+                sb.append("      \"")
+                        .append(escapeJava(field))
+                        .append("\"");
+
+                if (++index < referencedFields.size()) {
+                    sb.append(",");
+                }
+                sb.append("\n");
+            }
+
+            sb.append("  );\n");
+        }
+
+        sb.append("  @Override\n");
+        sb.append("  public Set<String> referencedFields() {\n");
+        sb.append("    return REFERENCED_FIELDS;\n");
+        sb.append("  }\n");
     }
 
     /** Date-only helpers emitted into every Rule, without extra runtime classes. */

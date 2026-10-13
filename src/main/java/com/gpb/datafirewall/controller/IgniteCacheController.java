@@ -47,7 +47,8 @@ public class IgniteCacheController {
     @SvoiApiLog(functionName = "Retrieving cache")
     @GetMapping("/cache/{cacheName}/latest")
     public CacheResponseDto<String, Object> getActualCache(@PathVariable String cacheName) {
-        String dbCacheName = cacheName.startsWith("politics") ? "politics" : cacheName;
+        String dbCacheName = cacheName.startsWith("politics") || cacheName.contains("mapping")
+                ? "politics" : cacheName;
         CacheVersion currentVersionRow =
                 cacheVersionRepository.findTopByIdCacheNameOrderByIdVersionDesc(dbCacheName)
                         .orElse(null);

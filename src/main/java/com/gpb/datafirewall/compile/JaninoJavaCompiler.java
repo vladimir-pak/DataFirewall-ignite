@@ -14,6 +14,11 @@ public final class JaninoJavaCompiler {
     public static byte[] compile(String className, String javaSource) {
         try {
             SimpleCompiler compiler = new SimpleCompiler();
+            // Generated rules use interface default/static methods (Rule default methods,
+            // Set.of), which require Java 8+ bytecode. Janino otherwise defaults to an
+            // older target and rejects static interface method invocations.
+            compiler.setSourceVersion(8);
+            compiler.setTargetVersion(8);
             compiler.cook(javaSource); // компиляция
 
             // Карта "полное_имя_класса -> байткод"

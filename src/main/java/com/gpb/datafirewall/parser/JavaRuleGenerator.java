@@ -74,7 +74,7 @@ public class JavaRuleGenerator {
         sb.append("  }\n");
 
         sb.append("  private Integer utf8Length(String s){\n");
-        sb.append("    return s==null ? null : Integer.valueOf(s.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);\n");
+        sb.append("    return s==null ? null : Integer.valueOf(s.codePointCount(0, s.length()));\n");
         sb.append("  }\n");
 
         sb.append("  private Integer toIntOrNull(Object v){\n");

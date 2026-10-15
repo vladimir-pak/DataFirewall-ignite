@@ -77,13 +77,21 @@ public class PoliticsRepository {
 
     public Map<String, Boolean> getFilterFlags() {
         String sql = """
-            select ca.code as control_area, coalesce(ff.value, 'N') as filter_flag
+            select ca.code as control_area
+                , coalesce(flt.value, 'N') as filter_flag
             from datafirewall.dictionary_items ca
-            left join datafirewall.dictionary_items ff 
-                on ff.dictionary_uuid = '9be1b8d7-1c66-4b92-8072-fcabc2b07d5d' 
-                and ff.code = ca.code
+            join datafirewall.dictionaries d
+                on ca.dictionary_uuid = d.uuid
+                and d.code = 'MKD_CONTROL_AREA'
+            left join (
+                select ff.value, ff.code
+                from datafirewall.dictionaries df
+                join datafirewall.dictionary_items ff 
+                    on df.uuid = ff.dictionary_uuid
+                where df.code = 'MKD_FILTER_CONTROL_AREAS' 
                 and ff.is_active = true
-            where ca.dictionary_uuid = '2336658d-9360-47b5-b6da-17f0be5f4574';
+            ) flt
+                on flt.code = ca.code;
         """;
 
         return jdbcTemplate.query(sql, rs -> {
@@ -102,9 +110,13 @@ public class PoliticsRepository {
 
     public Map<String, Set<String>> getDatasetExclusion() {
         String sql = """
-            SELECT control_area, jsonb_agg(dataset_code order by dataset_code) as dataset_codes
-            FROM datafirewall.dataset_exclusion
-            GROUP BY control_area;
+            select di.code as control_area
+                , jsonb_agg(di.value order by di.value)
+            from datafirewall.dictionary_items di
+            join datafirewall.dictionaries d
+            on di.dictionary_uuid = d.uuid
+            where d.code = 'DATASET_EXCLUSION'
+            group by di.code;
         """;
 
         return jdbcTemplate.query(sql, rs -> {
@@ -143,15 +155,21 @@ public class PoliticsRepository {
                     , regexp_split_to_table(co.value, ';') as control_obj
                     , caic.check_uuid
                 from datafirewall.dictionary_items dsc
+                join datafirewall.dictionaries dd
+					on dsc.dictionary_uuid = dd.uuid 
+					and dd.code = 'MKD_DATASETS'
                 join datafirewall.dictionary_items ca
                     on ca.uuid = dsc.parent_id
-                    and ca.dictionary_uuid = '2336658d-9360-47b5-b6da-17f0be5f4574'
+               	join datafirewall.dictionaries dic
+					on ca.dictionary_uuid = dic.uuid 
+                    and dic.code = 'MKD_CONTROL_AREA'
                 join datafirewall.dictionary_items co
                     on co.code = dsc.code
-                    and co.dictionary_uuid = '3b392ddb-79b2-421b-bdde-8fffe4e748ee'
+                join datafirewall.dictionaries dco
+					on co.dictionary_uuid = dco.uuid 
+                    and dco.code = 'MKD_DATASET_CONTROL_OBJS'
                 join datafirewall.control_areas_in_check caic 
                     on caic.code = ca.code
-                where dsc.dictionary_uuid = '78c525b9-f5e8-40aa-b959-1a22bb9c4983'
             )
             select t.control_area
                 , jsonb_object_agg(
@@ -159,10 +177,11 @@ public class PoliticsRepository {
                     ids
                 ) as controls
             from (
-                select  d.control_area
+                select 
+                	d.control_area
                     , d.control_obj
                     , ch.checked_attr 
-                    , jsonb_agg('Rule' || ch.id::varchar order by ch.id) as ids
+                    , jsonb_agg(distinct 'Rule' || ch.id::varchar) as ids
                 from fulldata d
                 join datafirewall.dqchecks ch
                     on ch.uuid = d.check_uuid

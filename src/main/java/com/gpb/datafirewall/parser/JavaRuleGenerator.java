@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * Важно: Janino НЕ поддерживает switch-expression, поэтому используем if/else.
  */
 public class JavaRuleGenerator {
-    public static final String GENERATOR_VERSION = "6-referenced-fields";
+    public static final String GENERATOR_VERSION = "8-empty-string-is-null";
     private static final Logger log = LoggerFactory.getLogger(JavaRuleGenerator.class);
     private static final Pattern INTERVAL_PART = Pattern.compile(
             "\\G\\s*([+-]?\\d+)\\s+(years?|months?|weeks?|days?)\\b", Pattern.CASE_INSENSITIVE);
@@ -39,6 +39,9 @@ public class JavaRuleGenerator {
         sb.append("public class ").append(className).append(" implements Rule {\n");
 
         sb.append("  private String toStringSafe(Object o){ return o==null?null:o.toString(); }\n");
+        sb.append("  private boolean isSqlNull(Object value){\n");
+        sb.append("    return value==null || (value instanceof String && ((String)value).isEmpty());\n");
+        sb.append("  }\n");
 
         sb.append("  private String getField(java.util.Map<String,String> data, String key){\n");
         sb.append("    if(!data.containsKey(key)) {\n");
@@ -1176,15 +1179,15 @@ public class JavaRuleGenerator {
         }
 
         if (e instanceof IsNullExpr ine) {
-            return "("
+            return "isSqlNull("
                     + genExpr(ine.expr, requiredFields)
-                    + "==null)";
+                    + ")";
         }
 
         if (e instanceof IsNotNullExpr inne) {
-            return "("
+            return "(!isSqlNull("
                     + genExpr(inne.expr, requiredFields)
-                    + "!=null)";
+                    + "))";
         }
 
         if (e instanceof LikeExpr le) {

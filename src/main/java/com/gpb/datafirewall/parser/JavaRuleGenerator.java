@@ -1005,6 +1005,8 @@ public class JavaRuleGenerator {
 
             if (fname.equals("regexp_like")) {
                 requireArity(f, 2, 2);
+                validateRegex(f.args.get(1));
+                
                 return genExpr(e, requiredFields);
             }
             throw new IllegalStateException("Function " + f.funcName
@@ -1509,6 +1511,21 @@ public class JavaRuleGenerator {
 
         throw new IllegalStateException(
                 "Unhandled expr type: " + e.getClass());
+    }
+
+    private void validateRegex(Expr expression) {
+        if (!(expression instanceof StringExpr pattern)) {
+            return;
+        }
+
+        try {
+            Pattern.compile(pattern.value);
+        } catch (java.util.regex.PatternSyntaxException e) {
+            throw new IllegalStateException(
+                    "Invalid regular expression: " + pattern.value,
+                    e
+            );
+        }
     }
 
     private String genCase(CaseExpr c, Set<String> requiredFields) {

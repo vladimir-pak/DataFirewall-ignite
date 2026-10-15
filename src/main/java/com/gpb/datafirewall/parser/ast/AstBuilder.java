@@ -48,11 +48,9 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
                     unquoteSingle(ctx.STRING().getText())
             );
         } else {
-            String raw = unquoteDouble(
-                    ctx.DQIDENT().getText()
-            ).replace("\\\"", "\"");
-
-            pattern = new StringExpr(raw);
+            pattern = new StringExpr(
+                    unquoteDoubleRegex(ctx.DQIDENT().getText())
+            );
         }
 
         return new FuncExpr(
@@ -153,16 +151,23 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
     @Override
     public Expr visitRegexpExpr(SqlWhereParser.RegexpExprContext ctx) {
         Expr left = visit(ctx.value());
+
         Expr pattern;
 
         if (ctx.STRING() != null) {
-            pattern = new StringExpr(unquoteSingle(ctx.STRING().getText()));
+            pattern = new StringExpr(
+                    unquoteSingle(ctx.STRING().getText())
+            );
         } else {
-            String raw = unquoteDouble(ctx.DQIDENT().getText()).replace("\\\"", "\"");
-            pattern = new StringExpr(raw);
+            pattern = new StringExpr(
+                    unquoteDoubleRegex(ctx.DQIDENT().getText())
+            );
         }
 
-        return new FuncExpr("regexp_like", List.of(left, pattern));
+        return new FuncExpr(
+                "regexp_like",
+                List.of(left, pattern)
+        );
     }
 
     @Override
@@ -351,5 +356,11 @@ public class AstBuilder extends SqlWhereBaseVisitor<Expr> {
 
     private static String unquoteDouble(String tk) {
         return tk.substring(1, tk.length() - 1);
+    }
+
+    private static String unquoteDoubleRegex(String token) {
+        return unquoteDouble(token)
+                .replace("\\\"", "\"")
+                .replace("\\\\", "\\");
     }
 }

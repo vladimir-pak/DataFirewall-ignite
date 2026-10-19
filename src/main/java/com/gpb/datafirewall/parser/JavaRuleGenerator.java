@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * Важно: Janino НЕ поддерживает switch-expression, поэтому используем if/else.
  */
 public class JavaRuleGenerator {
-    public static final String GENERATOR_VERSION = "8-empty-string-is-null";
+    public static final String GENERATOR_VERSION = "9-boolean-numeric-equality";
     private static final Logger log = LoggerFactory.getLogger(JavaRuleGenerator.class);
     private static final Pattern INTERVAL_PART = Pattern.compile(
             "\\G\\s*([+-]?\\d+)\\s+(years?|months?|weeks?|days?)\\b", Pattern.CASE_INSENSITIVE);
@@ -197,6 +197,21 @@ public class JavaRuleGenerator {
         sb.append("  }\n");
 
         sb.append("  private boolean numEq(Object a, Object b){ Double da=toDoubleOrNull(a), db=toDoubleOrNull(b); return da!=null && db!=null && Double.compare(da,db)==0; }\n");
+        // Вызывается только для числового равенства с литералом 0 или 1.
+        // Boolean распознаётся до числового парсинга, без NumberFormatException.
+        sb.append("  private boolean numEqBoolean(Object value, boolean expected){\n");
+        sb.append("    if(value==null) return false;\n");
+        sb.append("    if(value instanceof String){\n");
+        sb.append("      String s=(String)value;\n");
+        sb.append("      if(s.length()==1) return s.charAt(0)==(expected?'1':'0');\n");
+        sb.append("      if(\"true\".equalsIgnoreCase(s)) return expected;\n");
+        sb.append("      if(\"false\".equalsIgnoreCase(s)) return !expected;\n");
+        sb.append("    } else if(value instanceof Boolean){\n");
+        sb.append("      return ((Boolean)value).booleanValue()==expected;\n");
+        sb.append("    }\n");
+        sb.append("    Double number=toDoubleOrNull(value);\n");
+        sb.append("    return number!=null && Double.compare(number.doubleValue(),expected?1d:0d)==0;\n");
+        sb.append("  }\n");
         sb.append("  private boolean numNe(Object a, Object b){ Double da=toDoubleOrNull(a), db=toDoubleOrNull(b); return da!=null && db!=null && Double.compare(da,db)!=0; }\n");
         sb.append("  private boolean numGt(Object a, Object b){ Double da=toDoubleOrNull(a), db=toDoubleOrNull(b); return da!=null && db!=null && da>db; }\n");
         sb.append("  private boolean numLt(Object a, Object b){ Double da=toDoubleOrNull(a), db=toDoubleOrNull(b); return da!=null && db!=null && da<db; }\n");
@@ -380,7 +395,6 @@ public class JavaRuleGenerator {
 
         sb.append("}\n");
 
-        log.debug(sb.toString());
         return sb.toString();
     }
 
@@ -884,6 +898,15 @@ public class JavaRuleGenerator {
         return "Period.of(" + period.getYears() + "," + period.getMonths() + "," + period.getDays() + ")";
     }
 
+    /** Распознаётся один раз при генерации, включая литералы 1.0 и 0.0. */
+    private Boolean booleanNumericLiteral(Expr expr) {
+        if (!(expr instanceof NumberExpr number)) return null;
+        java.math.BigDecimal value = new java.math.BigDecimal(number.value);
+        if (value.compareTo(java.math.BigDecimal.ONE) == 0) return Boolean.TRUE;
+        if (value.compareTo(java.math.BigDecimal.ZERO) == 0) return Boolean.FALSE;
+        return null;
+    }
+
     private boolean isNumericExpr(Expr e) {
         if (e instanceof NumberExpr) return true;
         if (e instanceof CaseExpr c) return caseResults(c).stream().anyMatch(this::isNumericExpr);
@@ -1148,6 +1171,14 @@ public class JavaRuleGenerator {
             if (numeric) {
                 switch (ce.op) {
                     case "=":
+                        Boolean rightBoolean = booleanNumericLiteral(ce.right);
+                        if (rightBoolean != null) {
+                            return "numEqBoolean(" + l + "," + rightBoolean + ")";
+                        }
+                        Boolean leftBoolean = booleanNumericLiteral(ce.left);
+                        if (leftBoolean != null) {
+                            return "numEqBoolean(" + r + "," + leftBoolean + ")";
+                        }
                         return "numEq(" + l + "," + r + ")";
                     case "!=":
                     case "<>":

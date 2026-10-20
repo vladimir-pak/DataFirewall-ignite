@@ -16,7 +16,7 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 import java.io.FileInputStream;
 import java.security.KeyStore;
-import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableConfigurationProperties({
@@ -31,18 +31,14 @@ public class IgniteThinClientConfig {
             IgniteSslProperties sslProps
     ) throws Exception {
 
-        if (props.getAddresses() == null || props.getAddresses().isBlank()) {
+        List<String> addresses = props.getAddresses();
+
+        if (addresses == null || addresses.isEmpty()) {
             throw new IllegalStateException("ignite.thin.addresses must be set");
         }
 
-        String[] addresses = Arrays.stream(props.getAddresses().split(","))
-                .map(String::trim)
-                .filter(s -> !s.isBlank())
-                .toArray(String[]::new);
-                
-
         ClientConfiguration cfg = new ClientConfiguration()
-                .setAddresses(addresses)
+                .setAddresses(addresses.toArray(new String[0]))
                 .setTimeout(props.getConnectTimeoutMs().intValue());
 
         if (props.getUsername() != null && !props.getUsername().isBlank()) {

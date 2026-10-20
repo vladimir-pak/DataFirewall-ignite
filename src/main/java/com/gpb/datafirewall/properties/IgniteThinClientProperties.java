@@ -1,26 +1,25 @@
 package com.gpb.datafirewall.properties;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "ignite.thin")
 public class IgniteThinClientProperties {
-
-    /**
-     * Список server nodes с client connector портом, например:
-     * 10.10.1.11:10800,10.10.1.12:10800
-     */
-    private String addresses;
+    
+    private List<String> addresses = new ArrayList<>();
 
     private Long connectTimeoutMs = 5000L;
     private boolean sslEnabled = false;
     private String username;
     private String password;
 
-    public String getAddresses() {
+    public List<String> getAddresses() {
         return addresses;
     }
 
-    public void setAddresses(String addresses) {
+    public void setAddresses(List<String> addresses) {
         this.addresses = addresses;
     }
 

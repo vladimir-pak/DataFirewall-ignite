@@ -111,7 +111,7 @@ public class PoliticsRepository {
     public Map<String, Set<String>> getDatasetExclusion() {
         String sql = """
             select di.code as control_area
-                , jsonb_agg(di.value order by di.value)
+                , jsonb_agg(di.value order by di.value) as dataset_codes
             from datafirewall.dictionary_items di
             join datafirewall.dictionaries d
             on di.dictionary_uuid = d.uuid

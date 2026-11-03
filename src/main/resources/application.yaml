@@ -1,33 +1,25 @@
 server:
-  port: 9200
-#   ssl:
-#     key-store: file:/app/cert/certificate.pfx
-#     key-store-password: ${KEYSTORE_PASSWORD}
-#     key-store-type: PKCS12
-#     enabled-protocols: TLSv1.3,TLSv1.2
-#     ciphers: >-
-#       TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-#       TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,
-#       TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,
-#       TLS_DHE_RSA_WITH_AES_256_CBC_SHA256
+  port: 9900
 
 spring:
   application:
-    name: ignite-server
-    version: ${APP_VERSION:0.0.1}
-    project-name: datafirewall
+    name: ignite-server-a
+    version: ${APP_VERSION}
+    project-name: MKD
 
 ignite:
+  work-directory: ${APP_PATH}/ignite/work
+
   instance-name: ignite-server-a
   consistent-id: ignite-server-a
-  local-host: 127.0.0.1
+  local-host: localhost
 
   cluster:
     activate-on-start: true
 
   discovery:
     addresses:
-      - 127.0.0.1:47500..47520
+      - localhost:47500..47520
     local-port: 47500
     local-port-range: 20
 
@@ -36,70 +28,40 @@ ignite:
     local-port-range: 20
 
   thin-client:
-    host: 127.0.0.1
+    host: localhost
     port: 10800
     port-range: 100
 
   ssl:
     enabled: false
-    client-auth: false
-    key-store-path:
-    key-store-password:
-    trust-store-path:
-    trust-store-password:
-
-    protocol: TLS
-    protocols:
-      - TLSv1.2
-      # - TLSv1.3
-
-    cipher-suites:
-      - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
-      - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-      # Если сертификаты ECDSA:
-      # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
-      # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
-      # Если включаешь TLSv1.3:
-      # - TLS_AES_256_GCM_SHA384
-      # - TLS_AES_128_GCM_SHA256
+    client-auth: true
 
   authentication:
     enabled: true
 
   persistence:
     enabled: true
-    storage-path: ./ignite/data/storage
-    wal-path: ./ignite/data/wal
-    wal-archive-path: ./ignite/data/wal-archive
+    storage-path: ${APP_PATH}/ignite/data/storage
+    wal-path: ${APP_PATH}/ignite/data/wal
+    wal-archive-path: ${APP_PATH}/ignite/data/wal-archive
 
   data-region:
     name: Default_Region
-    initial-size-mb: 256
-    max-size-mb: 512
-
-# Для второго узла:
-# ignite:
-#   instance-name: ignite-server-b
-#   consistent-id: ignite-server-b
-#   local-host: 10.10.1.12
-
-#   discovery:
-#     addresses:
-#       - 10.10.1.11:47500..47520
-#       - 10.10.1.12:47500..47520
+    initial-size-mb: 512
+    max-size-mb: 2048
 
 logs-database:
   enabled: true
   task-create-partition: 0 0 0 * * ?
-  url: jdbc:postgresql://localhost:5432/db_log
-  username: postgres
-  password: postgres
+  url: ${LOGS_DB_URL}
+  username: ${LOGS_DB_USER}
+  password: ${LOGS_DB_PASSWORD}
   driverClassName: org.postgresql.Driver
-  table: "audit.jdata_postgres_log"
+  table: "dq_audit.datafirewall_ignite_log"
 
 clean-database-logs:
   # cron expression, to switch off put value '-'
-  task-cleaner-schedule: 0 0 1 * * ?
+  task-cleaner-schedule: 0 0 * * * ?
   # delete logs from db that older than X days
   clean-period: 1080
 
@@ -116,7 +78,7 @@ management:
 
 logging:
   cef:
-    path: logs
+    path: ${APP_PATH}/logs
     fileName: cef.log
     retention-days: 90
   level:
@@ -126,12 +88,5 @@ logging:
     org.apache.flink: INFO
     org.springframework.jdbc: WARN
     com.gpb.replication.postgres: DEBUG
-  file:
-    name: logs/jdata.log
-  pattern:
-    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
-    console: "%d{HH:mm:ss} %-5level %logger{36} - %msg%n"
-  logback:
-    rollingpolicy:
-      max-file-size: 50MB
-      max-history: 7
+    org.flywaydb: DEBUG
+  config: file:${APP_PATH}/config/logback-spring.xml

@@ -9,9 +9,9 @@
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.gpb.datafirewall.ignite</groupId>
-	<artifactId>ignite-server</artifactId>
+	<artifactId>datafirewall-ignite</artifactId>
 	<version>0.0.1</version>
-	<name>ignite-server</name>
+	<name>datafirewall-ignite</name>
 	<description>Data Firewall Ignite Server</description>
 
 	<properties>
@@ -62,6 +62,18 @@
 			<artifactId>commons-compress</artifactId>
 			<version>1.26.1</version>
 		</dependency>
+
+        <dependency>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
+			<!-- <scope>runtime</scope> -->
+		</dependency>
+
+        <dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<version>1.4.197</version>
+		</dependency>
     </dependencies>
 
 	<build>
@@ -76,25 +88,13 @@
             </plugin>
 
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.6.1</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                        <configuration>
-                            <createDependencyReducedPom>false</createDependencyReducedPom>
-                            <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.gpb.datafirewall.ignite.ServerNode</mainClass>
-                                </transformer>
-                            </transformers>
-                        </configuration>
-                    </execution>
-                </executions>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>
+                        com.gpb.datafirewall.ignite.IgniteServerApplication
+                    </mainClass>
+                </configuration>
             </plugin>
         </plugins>
     </build>
